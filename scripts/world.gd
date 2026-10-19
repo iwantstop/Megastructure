@@ -10,6 +10,9 @@ const Mannequins = preload("res://scripts/mannequins.gd")
 const Props = preload("res://scripts/props.gd")
 const CONCRETE_SHADER = preload("res://shaders/concrete.gdshader")
 const BODYCAM_SHADER = preload("res://shaders/bodycam.gdshader")
+const FACADE_SHADER = preload("res://shaders/facade.gdshader")
+const HOLOGRAM_SHADER = preload("res://shaders/hologram.gdshader")
+const SIGN_WORDS := ["БАР", "ОТЕЛЬ", "ЛЮБОВЬ", "ДЕНЬГИ", "НОЧЬ", "СОН", "КЛУБ", "ЕДА", "24 ЧАСА", "ЗАЙМЫ", "РАЙ"]
 
 var rng := RandomNumberGenerator.new()
 var sky_mat: ProceduralSkyMaterial
@@ -21,6 +24,8 @@ var time := 0.0
 var shared_noise: NoiseTexture2D
 var neon: Array[StandardMaterial3D] = []
 var neon_energy: Array[float] = []
+var beacon: StandardMaterial3D
+var holograms: Array[Node3D] = []
 
 const AD_TEXTS := [
 	"КУПИ СЕБЕ СЧАСТЬЕ", "БОЛЬШЕ. ЕЩЁ. СЕЙЧАС.", "ТЫ ЗАСЛУЖИВАЕШЬ ВСЁ", "ЛЮБОВЬ 24/7",
@@ -54,6 +59,11 @@ func _ready() -> void:
 	var player := _spawn_player()
 	var rain := _make_rain(player)
 	_make_ads(structures.ads)
+	_make_signs(structures.signs)
+	_make_holograms(structures.crossings)
+	var traffic = preload("res://scripts/traffic.gd").new()
+	traffic.setup(structures.streets, rng)
+	add_child(traffic)
 	var mountain_mat := _make_mountain()
 	var clouds_mat := _make_clouds()
 
@@ -113,9 +123,37 @@ func _make_materials() -> Dictionary:
 	signal_amber = _plain(Color(0.25, 0.15, 0.02), 0.4, 0.0)
 	signal_amber.emission_enabled = true
 	signal_amber.emission = Color(1.0, 0.6, 0.1)
+	beacon = _glow(Color(0.3, 0.02, 0.02), Color(1.0, 0.05, 0.03), 4.0)
+	for c in NEON_COLORS:
+		var mat := _glow(c * 0.6, c, 3.0)
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		neon.append(mat)
+		neon_energy.append(3.0)
+
+	# Фасады небоскрёбов: окна рисует шейдер. Разный шаг окон, рёбра, доля горящих окон.
+	var facade := func(wall: Color, cell: Vector2, window: Vector2, fins: float, lit: float) -> ShaderMaterial:
+		var mat := ShaderMaterial.new()
+		mat.shader = FACADE_SHADER
+		mat.set_shader_parameter("noise_tex", noise_tex)
+		mat.set_shader_parameter("wall_color", wall)
+		mat.set_shader_parameter("cell", cell)
+		mat.set_shader_parameter("window", window)
+		mat.set_shader_parameter("fin_every", fins)
+		mat.set_shader_parameter("lit_chance", lit)
+		return mat
 
 	return {
+		"neon": neon,
+		"beacon": beacon,
 		"facades": [
+			facade.call(Color(0.32, 0.33, 0.35), Vector2(3.0, 3.2), Vector2(0.7, 0.55), 0.0, 0.12),
+			facade.call(Color(0.22, 0.23, 0.25), Vector2(1.6, 3.2), Vector2(0.75, 0.7), 4.0, 0.08),
+			facade.call(Color(0.42, 0.4, 0.37), Vector2(2.4, 3.2), Vector2(0.5, 0.45), 0.0, 0.15),
+			facade.call(Color(0.18, 0.2, 0.22), Vector2(1.2, 3.2), Vector2(0.85, 0.8), 6.0, 0.05),
+			facade.call(Color(0.36, 0.3, 0.27), Vector2(3.5, 3.2), Vector2(0.6, 0.5), 3.0, 0.1),
+			facade.call(Color(0.27, 0.3, 0.33), Vector2(2.0, 3.2), Vector2(0.8, 0.35), 0.0, 0.2),
+		],
+		"house_facades": [
 			plaster.call(Color(0.68, 0.66, 0.62)), plaster.call(Color(0.6, 0.63, 0.66)),
 			plaster.call(Color(0.7, 0.64, 0.55)), plaster.call(Color(0.55, 0.6, 0.55)),
 			plaster.call(Color(0.68, 0.58, 0.56)), plaster.call(Color(0.5, 0.5, 0.52)),
@@ -196,6 +234,9 @@ func _glow(color: Color, emission: Color, energy: float) -> StandardMaterial3D:
 func _process(delta: float) -> void:
 	time += delta
 	signal_amber.emission_energy_multiplier = 2.5 if fmod(time, 1.6) < 0.8 else 0.0
+	beacon.emission_energy_multiplier = 5.0 if fmod(time, 2.0) < 0.25 else 0.3  # огни на шпилях
+	for h in holograms:
+		h.rotate_y(delta * 0.15)
 	for i in neon.size():
 		if randf() < 0.004:
 			neon[i].emission_energy_multiplier = neon_energy[i] * 0.15  # короткий сбой
@@ -247,7 +288,8 @@ func _make_environment() -> void:
 	env.ssao_enabled = true
 	env.ssr_enabled = true
 	env.glow_enabled = true
-	env.glow_intensity = 0.25
+	env.glow_intensity = 0.6  # неон, фары и огни расплываются в тумане
+	env.glow_bloom = 0.05
 	# Чуть приглушённые цвета, но с контрастом.
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 0.9
@@ -361,15 +403,77 @@ func _make_rain(player: Node3D) -> GPUParticles3D:
 	return rain
 
 
+## Вертикальные вывески поперёк улицы: светящаяся полоса и слово по буквам сверху вниз, с обеих сторон.
+func _make_signs(spots: Array[Dictionary]) -> void:
+	for spot in spots:
+		var xform: Transform3D = spot.xform
+		var size: Vector2 = spot.size
+		var k := rng.randi() % NEON_COLORS.size()
+		var word: String = SIGN_WORDS[rng.randi() % SIGN_WORDS.size()]
+		var letters := "\n".join(word.split(""))
+		for side in [0.0, PI]:
+			var face := xform.rotated_local(Vector3.UP, side).translated_local(Vector3(0, 0, 0.2 if side > 0 else 0.0))
+			var quad := QuadMesh.new()
+			quad.size = size
+			var panel := MeshInstance3D.new()
+			panel.mesh = quad
+			panel.material_override = neon[k]
+			panel.transform = face
+			add_child(panel)
+			var label := Label3D.new()
+			label.text = letters
+			label.font_size = 96
+			label.shaded = false
+			label.line_spacing = -20
+			label.pixel_size = minf(size.x * 0.75 / 96.0, size.y * 0.9 / (word.length() * 96.0))
+			label.modulate = Color(0.02, 0.02, 0.02)
+			label.transform = face.translated_local(Vector3(0, 0, 0.02))
+			add_child(label)
+
+
+## Огромные голограммы над перекрёстками: медленно вращаются, светятся сквозь дождь.
+func _make_holograms(points: Array[Vector2]) -> void:
+	var picks := points.duplicate()
+	picks.shuffle()
+	for i in mini(8, picks.size()):
+		var p: Vector2 = picks[i]
+		var color: Color = NEON_COLORS[rng.randi() % NEON_COLORS.size()]
+		var mat := ShaderMaterial.new()
+		mat.shader = HOLOGRAM_SHADER
+		mat.set_shader_parameter("color", color)
+		var root := Node3D.new()
+		root.position = Vector3(p.x, rng.randf_range(35, 70), p.y)
+		add_child(root)
+
+		var shape := MeshInstance3D.new()
+		if i % 2 == 0:
+			var quad := QuadMesh.new()
+			quad.size = Vector2(16, 26)
+			shape.mesh = quad
+			var label := Label3D.new()
+			var text: String = AD_TEXTS[rng.randi() % AD_TEXTS.size()]
+			label.text = text.replace(" ", "\n")
+			label.font_size = 128
+			label.shaded = false
+			label.double_sided = true
+			label.pixel_size = 0.03
+			label.modulate = color * 2.5
+			label.transparency = 0.2
+			root.add_child(label)
+		else:
+			var torus := TorusMesh.new()
+			torus.inner_radius = 8
+			torus.outer_radius = 10
+			shape.mesh = torus
+			shape.rotation.x = PI / 2.0
+		shape.material_override = mat
+		root.add_child(shape)
+		holograms.append(root)
+
+
 ## Горящие билборды: светящиеся панели с лозунгами, мерцают, освещают мокрые улицы.
 func _make_ads(spots: Array[Dictionary]) -> void:
-	for c in NEON_COLORS:
-		var mat := _glow(c * 0.6, c, 3.0)
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		neon.append(mat)
-		neon_energy.append(3.0)
 	var dark := _plain(Color(0.03, 0.03, 0.035), 0.4, 0.0)
-
 	var lights_left := 28
 	for ad in spots:
 		var xform: Transform3D = ad.xform

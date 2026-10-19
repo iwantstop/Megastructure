@@ -1,8 +1,11 @@
 extends Node3D
 
-## Чьё-то присутствие: тёмный силуэт стройной девушки с каре иногда стоит вдалеке,
-## в тумане, и смотрит куда-то вдаль. Если подойти ближе — тихо растворяется.
-## Чем дольше гуляешь, тем чаще она появляется.
+## Ангел героя: тёмный силуэт стройной девушки с каре. Она всегда вдалеке, всегда молчит,
+## и стоит только в стороне горы — будто зовёт туда. Появляется, лишь когда смотришь к горе.
+## Если подойти ближе — тихо растворяется. Чем дольше идёшь, тем чаще она появляется.
+
+const MOUNTAIN := Vector3(0, 0, -4600)
+const LOOK_CONE := 0.9  # радиан: насколько взгляд должен быть направлен к горе
 
 const FIRST_APPEAR := 45.0   # секунд до первого появления
 const VANISH_DISTANCE := 28.0
@@ -56,10 +59,16 @@ func call_now() -> void:
 
 
 func _try_appear() -> void:
-	# Где-то впереди, но не прямо по центру взгляда.
-	var forward := -player.global_transform.basis.z
-	forward.y = 0
-	forward = forward.normalized().rotated(Vector3.UP, rng.randf_range(-0.6, 0.6))
+	# Только между героем и горой — и только если он сейчас смотрит в ту сторону.
+	var to_mountain := MOUNTAIN - player.global_position
+	to_mountain.y = 0
+	to_mountain = to_mountain.normalized()
+	var view := -get_viewport().get_camera_3d().global_transform.basis.z
+	view.y = 0
+	if view.normalized().dot(to_mountain) < cos(LOOK_CONE):
+		timer = 2.0
+		return
+	var forward := to_mountain.rotated(Vector3.UP, rng.randf_range(-0.35, 0.35))
 	var spot := player.global_position + forward * rng.randf_range(45, 85)  # в густом тумане дальше не видно
 
 	# Луч сверху: она может стоять и на земле, и на крыше, и на мосту.

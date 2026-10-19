@@ -26,6 +26,9 @@ var lights: Array[Vector3] = []
 var streets: Array[Vector4] = []  # оси улиц: (x0, z0, x1, z1)
 var plazas: Array[Vector2] = []
 var ads: Array[Dictionary] = []   # места под горящие билборды: {xform, size}
+var signs: Array[Dictionary] = [] # вертикальные неоновые вывески поперёк улицы: {xform, size}
+var crossings: Array[Vector2] = []  # перекрёстки — над ними висят голограммы
+var city_towers: Array[Dictionary] = []  # небоскрёбы — между ними воздушные мосты
 
 ## Самая высокая башня — с неё прыгнул герой. Он лежит у её подножия.
 const TALLEST_TOWER := Vector3(0, 0, 118)
@@ -187,13 +190,13 @@ func _city() -> void:
 			var cx := i * PITCH
 			var cz := j * PITCH
 			var roll := rng.randf()
-			if roll < 0.62:
+			if roll < 0.5:
 				_sidewalk_plate(cx, cz)
 				_perimeter_block(cx, cz)
-			elif roll < 0.72:
+			elif roll < 0.75:
 				_sidewalk_plate(cx, cz)
-				_apartment_block(cx, cz)
-			elif roll < 0.8:
+				_megablock(cx, cz)
+			elif roll < 0.82:
 				_sidewalk_plate(cx, cz)
 				_park(cx, cz)
 			elif roll < 0.88:
@@ -208,6 +211,7 @@ func _city() -> void:
 	_roads()
 	_street_furniture()
 	_roof_bridges()
+	_skybridges()
 
 
 ## Квартал стоит на плите тротуара — край плиты и есть бордюр.
@@ -226,24 +230,30 @@ func _perimeter_block(cx: float, cz: float) -> void:
 		{"from": Vector2(cx + half - depth / 2.0, cz + half - depth), "dir": Vector2(0, -1), "length": BLOCK - 2 * depth, "yaw": PI / 2.0},
 		{"from": Vector2(cx - half + depth / 2.0, cz - half + depth), "dir": Vector2(0, 1), "length": BLOCK - 2 * depth, "yaw": -PI / 2.0},
 	]
-	var base_floors := rng.randi_range(2, 6)
-	for row in rows:
+	var base_floors := rng.randi_range(5, 12)
+	var tall_corner := rng.randf() < 0.4  # иногда угол квартала занимает небоскрёб
+	for r in rows.size():
+		var row: Dictionary = rows[r]
 		var pos := 0.0
 		var length: float = row.length
 		while pos < length - 6.0:
 			var w := minf(rng.randf_range(9, 16), length - pos)
 			if length - pos - w < 7.0:
 				w = length - pos  # последний дом добирает до угла
+			var first := pos == 0.0
 			var center: Vector2 = row.from + row.dir * (pos + w / 2.0)
 			pos += w
 			if rng.randf() < 0.08:
 				continue  # проулок
 			var t := Transform3D(Basis(Vector3.UP, row.yaw), Vector3(center.x, CURB, center.y))
-			var floors := clampi(base_floors + rng.randi_range(-1, 2), 1, 8)
-			if rng.randf() < 0.18 and floors <= 6 and w >= 8.0:
-				_house(t, w - 0.3, depth, floors)
+			if r == 0 and first and tall_corner:
+				_skyscraper(t, w - 0.3, depth, rng.randf_range(80, 220))
+				continue
+			var floors := clampi(base_floors + rng.randi_range(-3, 4), 2, 18)
+			if rng.randf() < 0.15 and w >= 8.0:
+				_house(t, w - 0.3, depth, rng.randi_range(2, 5))  # старый дом, в который можно зайти
 			else:
-				_facade_building(t, w - 0.3, depth, floors, rng.randf() < 0.5)
+				_facade_building(t, w - 0.3, depth, floors, rng.randf() < 0.6)
 	# Во дворе — мёртвое дерево или брошенная машина.
 	if rng.randf() < 0.6:
 		_dead_tree(Vector3(cx + rng.randf_range(-3, 3), CURB, cz + rng.randf_range(-3, 3)))
@@ -255,52 +265,121 @@ func _facade_mat() -> Material:
 	return _pick(m.facades)
 
 
-## Здание, в которое нельзя зайти: объём с окнами, карнизами, иногда магазином внизу.
+## Здание, в которое нельзя зайти. Окна рисует шейдер фасада, внизу — магазин или вход.
 ## Фасад смотрит в сторону +Z локально.
 func _facade_building(t: Transform3D, w: float, d: float, floors: int, shop: bool) -> void:
 	var h := floors * FLOOR_H + 0.3
-	var mat := _facade_mat()
-	b.box_local(t, Vector3(0, h / 2.0, 0), Vector3(w, h, d), mat)
-	# Парапет и карниз.
-	b.box_local(t, Vector3(0, h + 0.1, 0), Vector3(w + 0.3, 0.2, d + 0.3), m.concrete_dark, false)
-	b.box_local(t, Vector3(0, h + 0.55, d / 2.0), Vector3(w + 0.3, 0.7, 0.3), m.concrete_dark, false)
-	for f in range(1, floors):
-		b.box_local(t, Vector3(0, f * FLOOR_H, d / 2.0 + 0.06), Vector3(w, 0.18, 0.12), m.concrete_dark, false)
-
-	var count := maxi(int(w / 3.0), 1)
-	for f in range(1 if shop else 0, floors):
-		for i in count:
-			var x := -w / 2.0 + (i + 0.5) * w / count
-			var glass: Material = m.glass_lit if rng.randf() < 0.03 else m.glass
-			b.box_local(t, Vector3(x, f * FLOOR_H + 1.6, d / 2.0 + 0.02), Vector3(1.2, 1.5, 0.06), glass, false)
-			b.box_local(t, Vector3(x, f * FLOOR_H + 0.82, d / 2.0 + 0.08), Vector3(1.45, 0.06, 0.16), m.concrete_dark, false)
+	b.box_local(t, Vector3(0, h / 2.0, 0), Vector3(w, h, d), _facade_mat())
+	b.box_local(t, Vector3(0, h + 0.4, 0), Vector3(w + 0.3, 0.8, d + 0.3), m.concrete_dark, false)
 	if shop:
 		_storefront(t, w, d)
 	else:
 		b.box_local(t, Vector3(-w / 2.0 + 1.1, 1.1, d / 2.0 + 0.03), Vector3(1.1, 2.2, 0.06), m.door, false)
+	if rng.randf() < 0.4:
+		_vertical_sign(t, w, d, h)
 
 	# Что-то на крыше.
-	var roof := h + 0.2
+	var roof := h + 0.8
 	var roll := rng.randf()
 	if roll < 0.2:
 		b.box_local(t, Vector3(w * 0.2, roof + 1.2, -d * 0.2), Vector3(3, 2.4, 3), m.concrete_dark, false)
-	elif roll < 0.35:
-		b.cylinder(t * Vector3(-w * 0.2, roof + 1.5, -d * 0.2), 1.1, 2.2, m.metal, t.basis, false)
-	elif roll < 0.45:
+	elif roll < 0.4:
 		_billboard(t, roof, w)
 	elif roll < 0.55:
-		b.rod(t * Vector3(w * 0.3, roof + 3, 0), 0.05, 6.0, m.metal)
+		b.rod(t * Vector3(w * 0.3, roof + 4, 0), 0.06, 8.0, m.metal)
+		b.box_local(t, Vector3(w * 0.3, roof + 8.2, 0), Vector3(0.4, 0.4, 0.4), m.beacon, false)
 	roofs.append({"pos": t * Vector3(0, roof, 0), "extent": minf(w, d)})
 
 
-## Магазин: большая витрина, вывеска и козырёк.
+## Магазин: большая витрина, светящаяся вывеска и козырёк.
 func _storefront(t: Transform3D, w: float, d: float) -> void:
 	var front := d / 2.0
-	b.box_local(t, Vector3(0.6, 1.45, front + 0.03), Vector3(w - 2.6, 2.3, 0.06), m.glass, false)
+	b.box_local(t, Vector3(0.6, 1.45, front + 0.03), Vector3(w - 2.6, 2.3, 0.06), m.glass_lit if rng.randf() < 0.3 else m.glass, false)
 	b.box_local(t, Vector3(-w / 2.0 + 0.9, 1.1, front + 0.03), Vector3(1.0, 2.2, 0.06), m.door, false)
-	b.box_local(t, Vector3(0, 3.0, front + 0.1), Vector3(w * 0.7, 0.55, 0.15), _pick(m.signs), false)
+	b.box_local(t, Vector3(0, 3.0, front + 0.1), Vector3(w * 0.7, 0.55, 0.15), _pick(m.neon), false)
 	var awning_center := t * Vector3(0.6, 2.65, front + 0.7)
 	b.box(awning_center, Vector3(w - 2.4, 0.05, 1.4), _pick(m.awnings), t.basis * Basis(Vector3.RIGHT, 0.28), false)
+
+
+## Вертикальная неоновая вывеска, торчащая из стены поперёк улицы.
+func _vertical_sign(t: Transform3D, w: float, d: float, h: float) -> void:
+	var length := minf(rng.randf_range(6, 14), h - 6.0)
+	if length < 4.0:
+		return
+	var x := (w / 2.0 - 0.8) * (1.0 if rng.randf() < 0.5 else -1.0)
+	var center := Vector3(x, 5.0 + length / 2.0, d / 2.0 + 0.7)
+	b.box_local(t, center, Vector3(0.18, length + 0.3, 1.2), m.metal, false)
+	signs.append({"xform": t * Transform3D(Basis(Vector3.UP, PI / 2.0), center + Vector3(0.1, 0, 0)), "size": Vector2(1.0, length)})
+
+
+## Небоскрёб со ступенчатыми уступами, неоновыми кантами, причалами для летающих машин,
+## шпилем с красным огнём и рекламой. Стоит основанием в t.
+func _skyscraper(t: Transform3D, w: float, d: float, h: float) -> void:
+	var mat := _facade_mat()
+	var tiers := rng.randi_range(2, 4)
+	var y := 0.0
+	var cw := w
+	var cd := d
+	for tier in tiers:
+		var th := h * 0.5 if tier == 0 else h * 0.5 / (tiers - 1)
+		var line: Material = _pick(m.neon)
+		b.box_local(t, Vector3(0, y + th / 2.0, 0), Vector3(cw, th, cd), mat, y < 60.0)
+		b.box_local(t, Vector3(0, y + th + 0.4, 0), Vector3(cw + 0.6, 0.8, cd + 0.6), m.concrete_dark, false)
+		b.box_local(t, Vector3(0, y + th + 0.85, cd / 2.0 + 0.32), Vector3(cw + 0.6, 0.12, 0.05), line, false)
+		# Причал для летающих машин.
+		if rng.randf() < 0.35 and th > 20.0:
+			var py := y + th * rng.randf_range(0.3, 0.8)
+			b.box_local(t, Vector3(cw / 2.0 + 4.0, py, 0), Vector3(8, 0.6, cd * 0.5), m.concrete_dark, false)
+			b.box_local(t, Vector3(cw / 2.0 + 8.0, py + 0.35, 0), Vector3(0.1, 0.1, cd * 0.5), line, false)
+		y += th
+		cw *= rng.randf_range(0.6, 0.85)
+		cd *= rng.randf_range(0.6, 0.85)
+	var spire := rng.randf_range(15, 60)
+	b.box_local(t, Vector3(0, y + spire / 2.0, 0), Vector3(1, spire, 1), m.metal, false)
+	b.box_local(t, Vector3(0, y + spire + 0.4, 0), Vector3(0.8, 0.8, 0.8), m.beacon, false)
+	if rng.randf() < 0.5:
+		_add_ad(t, Vector3(0, minf(h * 0.3, 80.0), d / 2.0 + 0.12), Vector2(w * 0.7, w * 0.9))
+	if rng.randf() < 0.5:
+		_vertical_sign(t, w, d, h)
+	city_towers.append({"pos": t.origin, "height": h, "radius": maxf(w, d) / 2.0})
+	towers.append({"pos": t.origin, "height": h, "radius": maxf(w, d) * 0.6})
+
+
+## Мегаблок: квартал-подиум с магазинами, на нём один или два небоскрёба.
+func _megablock(cx: float, cz: float) -> void:
+	var t := Transform3D(Basis(Vector3.UP, (rng.randi() % 4) * PI / 2.0), Vector3(cx, CURB, cz))
+	var podium := rng.randf_range(10, 22)
+	b.box_local(t, Vector3(0, podium / 2.0, 0), Vector3(34, podium, 34), _facade_mat())
+	_storefront(t, 34, 34)
+	_add_ad(t, Vector3(0, podium * 0.6, 17.12), Vector2(20, podium * 0.55))
+	var top := t.translated_local(Vector3(0, podium, 0))
+	if rng.randf() < 0.3:
+		for s in [-1.0, 1.0]:
+			_skyscraper(top.translated_local(Vector3(s * 8.5, 0, -s * 8.5)), 13, 13, rng.randf_range(100, 260))
+	else:
+		_skyscraper(top, rng.randf_range(18, 26), rng.randf_range(18, 26), rng.randf_range(120, 380))
+
+
+## Застеклённые воздушные мосты между соседними небоскрёбами.
+func _skybridges() -> void:
+	var made := 0
+	for a in city_towers.size():
+		for c in range(a + 1, city_towers.size()):
+			if made >= 25:
+				return
+			var pa: Vector3 = city_towers[a].pos
+			var pb: Vector3 = city_towers[c].pos
+			var dist := Vector2(pa.x, pa.z).distance_to(Vector2(pb.x, pb.z))
+			if dist < 25.0 or dist > 110.0 or rng.randf() > 0.4:
+				continue
+			var ha: float = city_towers[a].height
+			var hb: float = city_towers[c].height
+			var y := maxf(pa.y, pb.y) + minf(ha, hb) * rng.randf_range(0.3, 0.45)
+			var mid := Vector3((pa.x + pb.x) / 2.0, y, (pa.z + pb.z) / 2.0)
+			var basis := Basis(Vector3.UP, atan2(pb.x - pa.x, pb.z - pa.z))
+			b.box(mid, Vector3(5, 3.5, dist), _facade_mat(), basis, false)
+			b.box(mid + Vector3.DOWN * 1.8, Vector3(0.3, 0.1, dist), _pick(m.neon), basis, false)
+			made += 1
 
 
 func _billboard(t: Transform3D, roof: float, w: float) -> void:
@@ -331,29 +410,6 @@ func _tallest_tower() -> void:
 	_add_ad(t, Vector3(0, 70, w / 2.0 + 0.45), Vector2(30, 40))
 	_add_ad(t, Vector3(0, 260, w / 2.0 + 0.45), Vector2(34, 22))
 	towers.append({"pos": TALLEST_TOWER, "height": h, "radius": w * 0.7})
-
-
-## Высотка: ленточные окна на каждом этаже по всем сторонам.
-func _apartment_block(cx: float, cz: float) -> void:
-	var count := 1 if rng.randf() < 0.6 else 2
-	for k in count:
-		var size := rng.randf_range(14, 22) if count == 1 else rng.randf_range(12, 15)
-		var off := 0.0 if count == 1 else (k - 0.5) * 18.0
-		var t := Transform3D(Basis(Vector3.UP, (rng.randi() % 4) * PI / 2.0), Vector3(cx + off, CURB, cz - off))
-		var floors := rng.randi_range(10, 20)
-		var h := floors * FLOOR_H
-		b.box_local(t, Vector3(0, h / 2.0, 0), Vector3(size, h, size), _facade_mat())
-		for f in range(1, floors):
-			var y := f * FLOOR_H + 1.5
-			var glass: Material = m.glass_lit if rng.randf() < 0.02 else m.glass
-			for s in [-1.0, 1.0]:
-				b.box_local(t, Vector3(0, y, s * (size / 2.0 + 0.02)), Vector3(size - 1.0, 1.3, 0.06), glass, false)
-				b.box_local(t, Vector3(s * (size / 2.0 + 0.02), y, 0), Vector3(0.06, 1.3, size - 1.0), glass, false)
-		b.box_local(t, Vector3(0, h + 0.4, 0), Vector3(size + 0.4, 0.8, size + 0.4), m.concrete_dark, false)
-		b.box_local(t, Vector3(0, 1.3, size / 2.0 + 0.03), Vector3(2.4, 2.4, 0.06), m.glass, false)
-		if rng.randf() < 0.6:
-			_add_ad(t, Vector3(0, h - 9.0, size / 2.0 + 0.12), Vector2(size * 0.75, 12.0))
-		towers.append({"pos": t.origin, "height": h, "radius": size * 0.7})
 
 
 ## Сквер: мёртвые деревья, скамейки, пустой фонтан.
@@ -426,6 +482,7 @@ func _roads() -> void:
 	# Зебры и светофоры.
 	for x in cross_x:
 		for z in cross_z:
+			crossings.append(Vector2(x, z))
 			for side in [-1.0, 1.0]:
 				if rng.randf() < 0.5:
 					for k in 7:
@@ -598,7 +655,7 @@ func _roof_bridges() -> void:
 func _house(t: Transform3D, w: float, d: float, floors: int) -> void:
 	var th := 0.3
 	var stair_w := 1.4
-	var mat := _facade_mat()
+	var mat: Material = _pick(m.house_facades)  # штукатурка/кирпич — у этих домов настоящие окна
 	var z_bottom := d / 2.0 - th - 1.5  # перед лестницей полтора метра, чтобы удобно зайти
 	for f in floors:
 		var y0 := f * FLOOR_H
