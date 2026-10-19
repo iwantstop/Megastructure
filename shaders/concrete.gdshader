@@ -94,10 +94,10 @@ void fragment() {
 	// Лужи: тёмные, гладкие, отражают небо и постройки.
 	float wet = 0.0;
 	if (puddles > 0.0 && n.y > 0.9) {
-		float pm = texture(noise_tex, wpos.xz * 0.013).r + fine * 0.08;
-		wet = smoothstep(0.66 - puddles * 0.12, 0.69 - puddles * 0.12, pm);
-		float damp = smoothstep(0.58 - puddles * 0.12, 0.66 - puddles * 0.12, pm);
-		col *= 1.0 - damp * 0.25 - wet * 0.3;
+		float pm = texture(noise_tex, wpos.xz * 0.04).r * 0.7 + texture(noise_tex, wpos.xz * 0.15).r * 0.3;
+		wet = smoothstep(0.64 - puddles * 0.08, 0.7 - puddles * 0.08, pm);
+		float damp = smoothstep(0.5 - puddles * 0.08, 0.66 - puddles * 0.08, pm);
+		col *= 1.0 - damp * 0.15 - wet * 0.15;
 	}
 
 	ALBEDO = col;

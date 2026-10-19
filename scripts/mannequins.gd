@@ -58,8 +58,19 @@ func _init(builder: Builder, random: RandomNumberGenerator, plastic_mat: Materia
 	foot.size = Vector3(0.09, 0.06, 0.24)
 
 
-## Расставляет манекены по улицам, по бульвару и на площадях.
-func populate(streets: Array[Vector4], plazas: Array[Vector2]) -> void:
+## Расставляет манекены по улицам, по галереям второго уровня, по бульвару и на площадях.
+func populate(streets: Array[Vector4], plazas: Array[Vector2], decks: Array[Vector4] = [], deck_y := 0.0) -> void:
+	for i in mini(30, decks.size()):
+		var s: Vector4 = decks[rng.randi() % decks.size()]
+		var a := Vector2(s.x, s.y)
+		var c := Vector2(s.z, s.w)
+		var dir := (c - a).normalized()
+		var p := a.lerp(c, rng.randf_range(0.15, 0.85))
+		var yaw := atan2(-dir.x, -dir.y) + (PI if rng.randf() < 0.5 else 0.0)
+		if not _is_taken(p, 1.5):
+			placed.append(p)
+			_figure(Vector3(p.x, deck_y, p.y), yaw, POSES[rng.randi() % POSES.size()])
+
 	for i in 90:
 		var s: Vector4 = streets[rng.randi() % streets.size()]
 		var a := Vector2(s.x, s.y)

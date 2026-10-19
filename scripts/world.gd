@@ -49,8 +49,9 @@ func _ready() -> void:
 	var structures := Structures.new(builder, rng, mats)
 	structures.build()
 	var mannequins := Mannequins.new(builder, rng, mats.plastic, mats.concrete)
-	mannequins.populate(structures.streets, structures.plazas)
+	mannequins.populate(structures.streets, structures.plazas, structures.decks, Structures.L1)
 	builder.finish(self)
+	_make_elevators(structures.elevators, mats)
 
 	var props := Props.new(rng)
 	var vignettes := props.place_all(self, structures)
@@ -92,6 +93,11 @@ func _ready() -> void:
 		"journey": journey, "intro": intro})
 	add_child(admin)
 
+	if "--demo" in OS.get_cmdline_user_args():
+		var demo = preload("res://scripts/demo.gd").new()
+		demo.setup(player, intro, structures.access_points)
+		add_child(demo)
+
 
 # --- Материалы ---------------------------------------------------------------
 
@@ -124,11 +130,10 @@ func _make_materials() -> Dictionary:
 	signal_amber.emission_enabled = true
 	signal_amber.emission = Color(1.0, 0.6, 0.1)
 	beacon = _glow(Color(0.3, 0.02, 0.02), Color(1.0, 0.05, 0.03), 4.0)
+	# Неон: тёмная подложка и сильное свечение (у «неосвещаемых» материалов Godot свечение не рисует).
 	for c in NEON_COLORS:
-		var mat := _glow(c * 0.6, c, 3.0)
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		neon.append(mat)
-		neon_energy.append(3.0)
+		neon.append(_glow(c * 0.15, c, 6.0))
+		neon_energy.append(6.0)
 
 	# Фасады небоскрёбов: окна рисует шейдер. Разный шаг окон, рёбра, доля горящих окон.
 	var facade := func(wall: Color, cell: Vector2, window: Vector2, fins: float, lit: float) -> ShaderMaterial:
@@ -146,12 +151,12 @@ func _make_materials() -> Dictionary:
 		"neon": neon,
 		"beacon": beacon,
 		"facades": [
-			facade.call(Color(0.32, 0.33, 0.35), Vector2(3.0, 3.2), Vector2(0.7, 0.55), 0.0, 0.12),
-			facade.call(Color(0.22, 0.23, 0.25), Vector2(1.6, 3.2), Vector2(0.75, 0.7), 4.0, 0.08),
-			facade.call(Color(0.42, 0.4, 0.37), Vector2(2.4, 3.2), Vector2(0.5, 0.45), 0.0, 0.15),
-			facade.call(Color(0.18, 0.2, 0.22), Vector2(1.2, 3.2), Vector2(0.85, 0.8), 6.0, 0.05),
-			facade.call(Color(0.36, 0.3, 0.27), Vector2(3.5, 3.2), Vector2(0.6, 0.5), 3.0, 0.1),
-			facade.call(Color(0.27, 0.3, 0.33), Vector2(2.0, 3.2), Vector2(0.8, 0.35), 0.0, 0.2),
+			facade.call(Color(0.46, 0.47, 0.48), Vector2(1.8, 3.2), Vector2(0.6, 0.5), 0.0, 0.22),
+			facade.call(Color(0.34, 0.35, 0.37), Vector2(1.2, 3.2), Vector2(0.7, 0.62), 4.0, 0.18),
+			facade.call(Color(0.52, 0.49, 0.45), Vector2(1.6, 3.2), Vector2(0.5, 0.45), 0.0, 0.25),
+			facade.call(Color(0.3, 0.32, 0.35), Vector2(1.0, 3.2), Vector2(0.75, 0.7), 6.0, 0.15),
+			facade.call(Color(0.48, 0.42, 0.38), Vector2(2.2, 3.2), Vector2(0.55, 0.5), 3.0, 0.2),
+			facade.call(Color(0.4, 0.43, 0.46), Vector2(1.4, 3.2), Vector2(0.8, 0.3), 0.0, 0.3),
 		],
 		"house_facades": [
 			plaster.call(Color(0.68, 0.66, 0.62)), plaster.call(Color(0.6, 0.63, 0.66)),
@@ -378,9 +383,14 @@ func _make_rain(player: Node3D) -> GPUParticles3D:
 	drop_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	drop_mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 	drop_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	drop_mat.albedo_color = Color(0.75, 0.8, 0.85, 0.22)
+	drop_mat.albedo_color = Color(0.75, 0.8, 0.85, 0.1)
+	drop_mat.proximity_fade_enabled = true  # капли у самой камеры растворяются, а не висят палками
+	drop_mat.proximity_fade_distance = 1.0
+	drop_mat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
+	drop_mat.distance_fade_min_distance = 0.5
+	drop_mat.distance_fade_max_distance = 3.0
 	var drop := QuadMesh.new()
-	drop.size = Vector2(0.012, 0.55)
+	drop.size = Vector2(0.006, 0.45)
 	drop.material = drop_mat
 
 	var rain := GPUParticles3D.new()
@@ -401,6 +411,21 @@ func _make_rain(player: Node3D) -> GPUParticles3D:
 	roofs.follow_camera_enabled = true
 	add_child(roofs)
 	return rain
+
+
+## Лифты в башнях доступа. Стартуют с разных остановок, чтобы не ездить синхронно.
+func _make_elevators(list: Array[Dictionary], mats: Dictionary) -> void:
+	for e in list:
+		var lift = preload("res://scripts/elevator.gd").new()
+		var stops: Array[float] = e.stops
+		lift.setup(stops, rng.randi() % stops.size(), mats.metal, _pick_neon())
+		var pos: Vector3 = e.pos
+		lift.position = Vector3(pos.x, 0, pos.z)
+		add_child(lift)
+
+
+func _pick_neon() -> Material:
+	return neon[rng.randi() % neon.size()]
 
 
 ## Вертикальные вывески поперёк улицы: светящаяся полоса и слово по буквам сверху вниз, с обеих сторон.

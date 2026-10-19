@@ -14,7 +14,7 @@ uniform float fin_every = 0.0;          // каждая N-я колонка — 
 uniform float lit_chance = 0.12;
 uniform vec3 lit_warm : source_color = vec3(1.0, 0.72, 0.42);
 uniform vec3 lit_cool : source_color = vec3(0.55, 0.8, 1.0);
-uniform float lit_energy = 2.0;
+uniform float lit_energy = 1.4;
 uniform float ground_floor = 3.6;       // ниже этой высоты окон нет — там магазины
 
 varying vec3 wpos;
@@ -57,8 +57,20 @@ void fragment() {
 	lit = mix(lit, lit_chance, far);
 	vec3 light = mix(lit_warm, lit_cool, step(0.5, hash(id * 1.7 + side)));
 
-	ALBEDO = mix(wall, glass_color, win);
-	ROUGHNESS = mix(0.85, 0.08, win);
+	// Межэтажная полоса — чтобы читались этажи.
+	float slab = (1.0 - smoothstep(0.04 - fw.y, 0.04 + fw.y, f.y)) * vertical * (1.0 - far);
+	wall *= 1.0 - slab * 0.35;
+
+	// Негорящее стекло отражает небо под углом — так окна видны и днём.
+	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
+	vec3 glass = mix(glass_color, vec3(0.32, 0.36, 0.42), 0.35 + 0.65 * fres);
+
+	// Внутри горящего окна свет неровный: где-то шторы, где-то ярче снизу.
+	float curtain = step(0.7, hash(id * 5.3)) * smoothstep(0.45, 0.5, f.x);
+	float inner = (0.55 + 0.45 * (1.0 - f.y)) * (1.0 - curtain * 0.7);
+
+	ALBEDO = mix(wall, glass, win);
+	ROUGHNESS = mix(0.85, 0.06, win);
 	METALLIC = 0.3 * win;
-	EMISSION = win * lit * light * lit_energy * (0.5 + 0.5 * hash(id * 3.1));
+	EMISSION = win * lit * light * lit_energy * (0.4 + 0.6 * hash(id * 3.1)) * mix(inner, 1.0, far);
 }

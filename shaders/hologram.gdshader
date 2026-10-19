@@ -4,7 +4,7 @@ render_mode blend_add, unshaded, cull_disabled, depth_draw_never, shadows_disabl
 // Голограмма: светящаяся, полупрозрачная, с бегущими полосами развёртки и мерцанием.
 
 uniform vec3 color : source_color = vec3(0.2, 0.8, 1.0);
-uniform float intensity = 1.6;
+uniform float intensity = 3.0;
 
 varying vec3 wpos;
 

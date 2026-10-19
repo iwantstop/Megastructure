@@ -33,6 +33,16 @@ var city_towers: Array[Dictionary] = []  # небоскрёбы — между �
 ## Самая высокая башня — с неё прыгнул герой. Он лежит у её подножия.
 const TALLEST_TOWER := Vector3(0, 0, 118)
 
+## Уровни города над землёй: галереи вдоль кварталов, мосты над улицами.
+const L1 := 14.0
+const L2 := 40.0
+const L3 := 75.0
+
+var plated: Array[Vector2] = []          # кварталы на плитах — вокруг них галереи
+var decks: Array[Vector4] = []           # оси галерей уровня L1 (для манекенов)
+var elevators: Array[Dictionary] = []    # {pos, stops} — лифты в башнях доступа
+var access_points: Array[Vector3] = []   # куда можно поставить игрока на каждом уровне (для демо)
+
 
 func _init(builder: Builder, random: RandomNumberGenerator, materials: Dictionary) -> void:
 	b = builder
@@ -209,6 +219,7 @@ func _city() -> void:
 				_construction_site(cx, cz)
 
 	_roads()
+	_levels()
 	_street_furniture()
 	_roof_bridges()
 	_skybridges()
@@ -217,6 +228,164 @@ func _city() -> void:
 ## Квартал стоит на плите тротуара — край плиты и есть бордюр.
 func _sidewalk_plate(cx: float, cz: float) -> void:
 	b.box(Vector3(cx, CURB / 2.0, cz), Vector3(PLATE, CURB, PLATE), m.sidewalk)
+	plated.append(Vector2(cx, cz))
+
+
+# --- Уровни над землёй -------------------------------------------------------
+
+## Многоуровневый город:
+## L1 — галереи вокруг кварталов вдоль фасадов + площадки-хабы над перекрёстками;
+## башни доступа с лифтами на части перекрёстков, с площадками на L2 и L3;
+## L2 — мосты над улицами вдоль оси X между башнями, L3 — вдоль оси Z;
+## длинные лестницы с улицы на хабы.
+func _levels() -> void:
+	var towers_at := {}  # Vector2i(ix, jz) -> Vector2 позиция перекрёстка
+	var hubs := {}
+	for c in crossings:
+		var key := Vector2i(roundi(c.x / PITCH - 0.5), roundi(c.y / PITCH - 0.5))
+		if posmod(key.x, 2) == 0 and posmod(key.y, 2) == 0 and absf(c.x) > 14.0:
+			towers_at[key] = c
+			hubs[key] = c
+		elif rng.randf() < 0.3:
+			hubs[key] = c
+
+	for blk in plated:
+		_deck_ring(blk, hubs)
+	for key in hubs:
+		_hub(hubs[key], towers_at.has(key))
+	for key in towers_at:
+		_access_tower(towers_at[key])
+
+	# Мосты L2 — вдоль X между соседними башнями в одном ряду; L3 — вдоль Z в одной колонке.
+	for key in towers_at:
+		var right := Vector2i(key.x + 2, key.y)
+		if towers_at.has(right):
+			_level_bridge(towers_at[key], towers_at[right], L2)
+		var down := Vector2i(key.x, key.y + 2)
+		if towers_at.has(down):
+			_level_bridge(towers_at[key], towers_at[down], L3)
+
+
+## Галерея L1 вокруг квартала: настил над тротуаром вдоль фасадов, перила со стороны улицы,
+## опоры. У перекрёстков с хабом перила обрываются, чтобы можно было пройти на хаб.
+func _deck_ring(c: Vector2, hubs: Dictionary) -> void:
+	var inner := BLOCK / 2.0      # фасады
+	var outer := PLATE / 2.0 + 1.5  # край настила над дорогой
+	var width := outer - inner
+	var mid := (inner + outer) / 2.0
+	var length := outer * 2.0
+	for side in 4:
+		# Ось галереи: вдоль X (север/юг) или вдоль Z (восток/запад).
+		var along_x := side < 2
+		var sgn := 1.0 if side % 2 == 0 else -1.0
+		var center := Vector3(c.x, L1 - 0.2, c.y + sgn * mid) if along_x else Vector3(c.x + sgn * mid, L1 - 0.2, c.y)
+		var size := Vector3(length, 0.4, width) if along_x else Vector3(width, 0.4, length)
+		b.box(center, size, m.concrete_dark)
+
+		# Перила по внешнему краю; у хабов — короче.
+		var rail_from := -outer
+		var rail_to := outer
+		var ends := [Vector2(c.x - outer - 2.5, c.y + sgn * (outer + 2.5)), Vector2(c.x + outer + 2.5, c.y + sgn * (outer + 2.5))] if along_x \
+			else [Vector2(c.x + sgn * (outer + 2.5), c.y - outer - 2.5), Vector2(c.x + sgn * (outer + 2.5), c.y + outer + 2.5)]
+		if hubs.has(_crossing_key(ends[0])):
+			rail_from += 4.0
+		if hubs.has(_crossing_key(ends[1])):
+			rail_to -= 4.0
+		var rail_len := rail_to - rail_from
+		var rail_mid := (rail_from + rail_to) / 2.0
+		var rail_center := Vector3(c.x + rail_mid, L1 + 0.5, c.y + sgn * (outer - 0.05)) if along_x \
+			else Vector3(c.x + sgn * (outer - 0.05), L1 + 0.5, c.y + rail_mid)
+		b.box(rail_center, Vector3(rail_len, 1.0, 0.1) if along_x else Vector3(0.1, 1.0, rail_len), m.metal)
+
+		# Опоры и иногда неоновая полоса снизу.
+		var p := -outer + 4.0
+		while p < outer - 2.0:
+			var pillar := Vector3(c.x + p, L1 / 2.0, c.y + sgn * (outer - 0.3)) if along_x \
+				else Vector3(c.x + sgn * (outer - 0.3), L1 / 2.0, c.y + p)
+			b.box(pillar, Vector3(0.35, L1, 0.35), m.metal)
+			p += 12.0
+		if rng.randf() < 0.35:
+			var strip := center + Vector3(0, -0.22, 0)
+			b.box(strip, Vector3(length, 0.05, 0.12) if along_x else Vector3(0.12, 0.05, length), _pick(m.neon), Basis.IDENTITY, false)
+
+		var a := Vector2(center.x - length / 2.0, center.z) if along_x else Vector2(center.x, center.z - length / 2.0)
+		var e := Vector2(center.x + length / 2.0, center.z) if along_x else Vector2(center.x, center.z + length / 2.0)
+		decks.append(Vector4(a.x, a.y, e.x, e.y))
+
+
+func _crossing_key(p: Vector2) -> Vector2i:
+	return Vector2i(roundi(p.x / PITCH - 0.5), roundi(p.y / PITCH - 0.5))
+
+
+## Площадка над перекрёстком на уровне L1: соединяет углы четырёх кварталов.
+## Если тут башня доступа — в центре проём под шахту лифта.
+func _hub(c: Vector2, has_tower: bool) -> void:
+	var half := 6.0
+	if has_tower:
+		_ring_platform(Vector3(c.x, L1, c.y), half * 2.0, 3.6, m.concrete_dark)
+	else:
+		b.box(Vector3(c.x, L1 - 0.2, c.y), Vector3(half * 2.0, 0.4, half * 2.0), m.concrete_dark)
+	# Перила посередине каждой стороны — там под хабом пустая улица.
+	for s in [-1.0, 1.0]:
+		b.box(Vector3(c.x, L1 + 0.5, c.y + s * (half - 0.05)), Vector3(5.0, 1.0, 0.1), m.metal)
+		if not has_tower or s < 0.0:
+			b.box(Vector3(c.x + s * (half - 0.05), L1 + 0.5, c.y), Vector3(0.1, 1.0, 5.0), m.metal)
+	access_points.append(Vector3(c.x + 4.5, L1 + 0.3, c.y + 4.5))
+
+
+## Квадратная площадка с квадратным проёмом в центре (под шахту лифта). y — уровень пола.
+func _ring_platform(center: Vector3, outer: float, hole: float, mat: Material) -> void:
+	var band := (outer - hole) / 2.0
+	var y := center.y - 0.2
+	for s in [-1.0, 1.0]:
+		b.box(Vector3(center.x, y, center.z + s * (hole / 2.0 + band / 2.0)), Vector3(outer, 0.4, band), mat)
+		b.box(Vector3(center.x + s * (hole / 2.0 + band / 2.0), y, center.z), Vector3(band, 0.4, hole), mat)
+
+
+## Башня доступа на перекрёстке: шахта с лифтом от земли до L3, площадки на L2 и L3,
+## длинная лестница с улицы на хаб L1.
+func _access_tower(c: Vector2) -> void:
+	var top := L3 + 4.0
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			b.box(Vector3(c.x + sx * 1.9, top / 2.0, c.y + sz * 1.9), Vector3(0.3, top, 0.3), m.metal)
+	b.box(Vector3(c.x, top + 0.2, c.y), Vector3(4.4, 0.4, 4.4), m.concrete_dark)
+	b.box(Vector3(c.x - 1.9, top / 2.0, c.y - 2.06), Vector3(0.08, top, 0.02), _pick(m.neon), Basis.IDENTITY, false)
+	b.box(Vector3(c.x, top + 0.6, c.y), Vector3(0.5, 0.5, 0.5), m.beacon, Basis.IDENTITY, false)
+
+	for level in [L2, L3]:
+		_ring_platform(Vector3(c.x, level, c.y), 10.0, 3.6, m.concrete_dark)
+		# Перила площадки; проёмы там, куда подходят мосты (L2 — по X, L3 — по Z).
+		for s in [-1.0, 1.0]:
+			if level == L3:
+				b.box(Vector3(c.x + s * 4.95, level + 0.5, c.y), Vector3(0.1, 1.0, 10.0), m.metal)
+				for k in [-1.0, 1.0]:
+					b.box(Vector3(c.x + k * 3.5, level + 0.5, c.y + s * 4.95), Vector3(3.0, 1.0, 0.1), m.metal)
+			else:
+				b.box(Vector3(c.x, level + 0.5, c.y + s * 4.95), Vector3(10.0, 1.0, 0.1), m.metal)
+				for k in [-1.0, 1.0]:
+					b.box(Vector3(c.x + s * 4.95, level + 0.5, c.y + k * 3.5), Vector3(0.1, 1.0, 3.0), m.metal)
+		access_points.append(Vector3(c.x + 3.5, level + 0.3, c.y + 3.5))
+
+	var stops: Array[float] = [0.0, L1, L2, L3]
+	elevators.append({"pos": Vector3(c.x, 0, c.y), "stops": stops})
+
+	# Лестница с дороги на хаб: подходит к перекрёстку с востока (+X), там у хаба нет перил.
+	var t := Transform3D(Basis(Vector3.UP, PI / 2.0), Vector3(c.x, 0, c.y))
+	var steps := int(ceil(L1 / 0.2))
+	_stairs(t, Vector3(0, 0, 6.0 + steps * 0.3), L1, 2.0, m.concrete_dark)
+
+
+## Пешеходный мост над улицей между площадками двух башен, с перилами.
+func _level_bridge(a: Vector2, c: Vector2, level: float) -> void:
+	var dir := (c - a).normalized()
+	var from := Vector3(a.x + dir.x * 4.8, level + 0.02, a.y + dir.y * 4.8)
+	var to := Vector3(c.x - dir.x * 4.8, level + 0.02, c.y - dir.y * 4.8)
+	_ramp(Transform3D.IDENTITY, from, to, 4.0, m.concrete_dark, true, 3)
+	if rng.randf() < 0.5:
+		var mid := (from + to) / 2.0 + Vector3.DOWN * 0.45
+		var length := from.distance_to(to)
+		b.box(mid, Vector3(0.12, 0.05, length) if absf(dir.y) > 0.5 else Vector3(length, 0.05, 0.12), _pick(m.neon), Basis.IDENTITY, false)
 
 
 ## Здания стоят плотным рядом по периметру квартала, фасадами на улицу; внутри — двор.
