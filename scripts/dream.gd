@@ -55,15 +55,7 @@ func _physics_process(delta: float) -> void:
 	var step := delta * time_scale
 	elapsed += step
 
-	# Туман берёт цвет с неба, поэтому достаточно менять небо.
-	var k := clampf(elapsed / DUSK_TIME, 0.0, 1.0)
-	sun.rotation_degrees.x = lerpf(sun_pitch_start, -18.0, k)
-	sun.light_color = sun_color_start.lerp(Color(1.0, 0.78, 0.6), k)
-	sky.sky_top_color = sky_top_start.lerp(Color(0.6, 0.56, 0.58), k)
-	var horizon := horizon_start.lerp(Color(0.84, 0.75, 0.68), k)
-	sky.sky_horizon_color = horizon
-	sky.ground_horizon_color = horizon
-
+	# Небом и светом теперь управляет путь героя (journey.gd), здесь только «сон».
 	next_shift -= step
 	if next_shift <= 0.0:
 		next_shift = rng.randf_range(150, 240)

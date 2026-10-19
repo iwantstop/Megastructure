@@ -25,6 +25,10 @@ var interior_spots: Array[Transform3D] = []
 var lights: Array[Vector3] = []
 var streets: Array[Vector4] = []  # оси улиц: (x0, z0, x1, z1)
 var plazas: Array[Vector2] = []
+var ads: Array[Dictionary] = []   # места под горящие билборды: {xform, size}
+
+## Самая высокая башня — с неё прыгнул герой. Он лежит у её подножия.
+const TALLEST_TOWER := Vector3(0, 0, 118)
 
 
 func _init(builder: Builder, random: RandomNumberGenerator, materials: Dictionary) -> void:
@@ -37,6 +41,8 @@ func build() -> void:
 	_ground()
 	_colonnade()
 	_city()
+	reserve(TALLEST_TOWER.x, TALLEST_TOWER.z, 60)
+	_tallest_tower()
 	_gate(Vector3(0, 0, -480), 0.0, 90.0, 260.0)
 	_megaslab(Vector3(-650, 0, -350), 520.0, 280.0)
 	_megaslab(Vector3(900, 0, 700), 700.0, 420.0)
@@ -301,6 +307,30 @@ func _billboard(t: Transform3D, roof: float, w: float) -> void:
 	for s in [-1.0, 1.0]:
 		b.rod(t * Vector3(s * w * 0.25, roof + 2.0, 0), 0.08, 4.0, m.metal)
 	b.box_local(t, Vector3(0, roof + 5.0, 0), Vector3(w * 0.7, 3.0, 0.15), m.billboard, false)
+	_add_ad(t, Vector3(0, roof + 5.0, 0.09), Vector2(w * 0.7, 3.0))
+
+
+## Запоминает место под рекламу: панель смотрит в +Z локально.
+func _add_ad(t: Transform3D, local_center: Vector3, size: Vector2) -> void:
+	ads.append({"xform": t * Transform3D(Basis.IDENTITY, local_center), "size": size})
+
+
+## Башня, с которой прыгнул герой: самая высокая в городе, тёмная, с огромной рекламой.
+func _tallest_tower() -> void:
+	var t := Transform3D(Basis(Vector3.UP, PI), TALLEST_TOWER)
+	var w := 46.0
+	var h := 760.0
+	b.box_local(t, Vector3(0, h / 2.0, 0), Vector3(w, h, w), m.tower_panels)
+	_slits(t, 0.0, h, w, w, 0.0)
+	var ledge := 30.0
+	while ledge < h:
+		b.box_local(t, Vector3(0, ledge, 0), Vector3(w + 3, 1.5, w + 3), m.concrete_dark, false)
+		ledge += 40.0
+	b.box_local(t, Vector3(0, h + 40, 0), Vector3(2, 80, 2), m.metal, false)
+	# Огромный горящий экран на фасаде, обращённом к городу.
+	_add_ad(t, Vector3(0, 70, w / 2.0 + 0.45), Vector2(30, 40))
+	_add_ad(t, Vector3(0, 260, w / 2.0 + 0.45), Vector2(34, 22))
+	towers.append({"pos": TALLEST_TOWER, "height": h, "radius": w * 0.7})
 
 
 ## Высотка: ленточные окна на каждом этаже по всем сторонам.
@@ -321,6 +351,8 @@ func _apartment_block(cx: float, cz: float) -> void:
 				b.box_local(t, Vector3(s * (size / 2.0 + 0.02), y, 0), Vector3(0.06, 1.3, size - 1.0), glass, false)
 		b.box_local(t, Vector3(0, h + 0.4, 0), Vector3(size + 0.4, 0.8, size + 0.4), m.concrete_dark, false)
 		b.box_local(t, Vector3(0, 1.3, size / 2.0 + 0.03), Vector3(2.4, 2.4, 0.06), m.glass, false)
+		if rng.randf() < 0.6:
+			_add_ad(t, Vector3(0, h - 9.0, size / 2.0 + 0.12), Vector2(size * 0.75, 12.0))
 		towers.append({"pos": t.origin, "height": h, "radius": size * 0.7})
 
 
@@ -789,6 +821,7 @@ func _slab_tower(x: float, z: float, w: float, d: float, h: float) -> void:
 	var roll := rng.randf()
 	var mat: Material = m.weathered if roll < 0.4 else (m.tower_panels if roll < 0.75 else m.concrete)
 	var footprint := maxf(w, d)
+	var d_base := d
 	var near := Vector2(x, z).length() < 800.0  # мелкие детали — только у ближних
 	var tiers := rng.randi_range(1, 4)
 	var y := 0.0
@@ -815,6 +848,10 @@ func _slab_tower(x: float, z: float, w: float, d: float, h: float) -> void:
 	if rng.randf() < 0.5:
 		var ah := rng.randf_range(40, 150)
 		b.box_local(t, Vector3(0, y + ah / 2.0, 0), Vector3(1.5, ah, 1.5), m.metal, false)
+	# Гигантская реклама на ближних мегабашнях — светится сквозь туман.
+	if near and rng.randf() < 0.4:
+		var aw := footprint * 0.6
+		_add_ad(t, Vector3(0, minf(h * 0.3, 140.0), d_base / 2.0 + 0.5), Vector2(aw, aw * 1.5))
 	towers.append({"pos": Vector3(x, 0, z), "height": y, "radius": footprint * 0.6})
 
 

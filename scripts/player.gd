@@ -21,6 +21,8 @@ var collision: CollisionShape3D
 
 var flying := false
 var fly_speed := 20.0
+var locked := false   # во вступлении: осматриваться можно, ходить — нет
+var lying := 0.0      # 1 — лежит на спине и смотрит в небо, 0 — стоит
 
 # Куда смотрим по мыши; тело и голова плавно догоняют.
 var target_yaw := 0.0
@@ -99,7 +101,7 @@ func _physics_process(delta: float) -> void:
 		input.x -= 1
 	if Input.is_physical_key_pressed(KEY_D):
 		input.x += 1
-	move_input = input.normalized()
+	move_input = Vector2.ZERO if locked else input.normalized()
 
 	if flying:
 		_fly(move_input, delta)
@@ -108,7 +110,7 @@ func _physics_process(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= gravity * delta
 		fall_speed = -velocity.y
-	elif Input.is_physical_key_pressed(KEY_SPACE):
+	elif Input.is_physical_key_pressed(KEY_SPACE) and not locked:
 		velocity.y = JUMP_VELOCITY
 
 	var speed := RUN_SPEED if Input.is_physical_key_pressed(KEY_SHIFT) else WALK_SPEED
@@ -196,14 +198,16 @@ func _process(delta: float) -> void:
 	breath_phase += delta * TAU / BREATH_PERIOD
 	var breath := sin(breath_phase) * (1.0 - clampf(walk_amount, 0.0, 1.0))
 
+	# Лёжа: камера у самой земли, взгляд в небо, голова чуть завалена набок.
+	var lie := lying * lying * (3.0 - 2.0 * lying)
 	camera.position = Vector3(
 		sway * 0.014 * amp,
-		-bounce * 0.022 * amp + breath * 0.008 - land_dip,
-		0)
+		-bounce * 0.022 * amp + breath * 0.008 - land_dip - 1.25 * lie,
+		0.3 * lie)
 	camera.rotation = Vector3(
-		-bounce * 0.004 * amp + breath * 0.003 + _shake(0.0) * 0.01 * shake,
+		-bounce * 0.004 * amp + breath * 0.003 + _shake(0.0) * 0.01 * shake + 1.05 * lie,
 		_shake(100.0) * 0.01 * shake,
-		tilt + strafe_tilt + sway * 0.006 * amp + _shake(200.0) * 0.008 * shake)
+		tilt + strafe_tilt + sway * 0.006 * amp + _shake(200.0) * 0.008 * shake + 0.25 * lie)
 
 
 ## Плавный шум для тряски: медленная «качка» плюс мелкая дрожь.

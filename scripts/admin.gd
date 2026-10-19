@@ -2,24 +2,29 @@ extends CanvasLayer
 
 ## Админ-панель. F1 — открыть/закрыть, F — быстро включить/выключить полёт.
 
-const START := Vector3(0, 0.2, 25)
+const START := Vector3(4, 0.2, 86)
 
 var player: CharacterBody3D
 var dream: Node
 var presence: Node
 var env: Environment
 var bodycam: CanvasLayer
+var journey: Node
+var intro: Node
 var panel: PanelContainer
 var fps_label: Label
 var fly_box: CheckBox
+var journey_slider: HSlider
 
 
-func setup(p_player: CharacterBody3D, p_dream: Node, p_presence: Node, p_env: Environment, p_bodycam: CanvasLayer) -> void:
-	player = p_player
-	dream = p_dream
-	presence = p_presence
-	env = p_env
-	bodycam = p_bodycam
+func setup(refs: Dictionary) -> void:
+	player = refs.player
+	dream = refs.dream
+	presence = refs.presence
+	env = refs.env
+	bodycam = refs.bodycam
+	journey = refs.journey
+	intro = refs.intro
 
 
 func _ready() -> void:
@@ -43,17 +48,29 @@ func _ready() -> void:
 	fps_label = Label.new()
 	box.add_child(fps_label)
 
+	_button(box, "Пропустить вступление", func() -> void: intro.skip())
 	fly_box = _check(box, "Полёт (F)  — Space вверх, Ctrl вниз", func(on: bool) -> void: player.set_flying(on))
 	_check(box, "Сквозь стены", func(on: bool) -> void: player.set_noclip(on))
 	_check(box, "Эффект бодикамеры", func(on: bool) -> void: bodycam.visible = on).button_pressed = true
 	_check(box, "Глобальное освещение (тяжёлое)", func(on: bool) -> void: env.sdfgi_enabled = on).button_pressed = true
 	_slider(box, "Скорость полёта", 5, 200, player.fly_speed, func(v: float) -> void: player.fly_speed = v)
-	_slider(box, "Скорость «сна» (закат, вещи, шпиль)", 1, 30, 1, func(v: float) -> void: dream.time_scale = v)
+	_check(box, "Путь героя вручную", _on_manual_journey)
+	journey_slider = _slider(box, "Путь: 0 — город, 100 — над облаками", 0, 100, 0, _on_journey_slider)
+	_slider(box, "Скорость «сна» (вещи, шпиль)", 1, 30, 1, func(v: float) -> void: dream.time_scale = v)
 	_button(box, "Позвать её", func() -> void: presence.call_now())
 	_button(box, "Переставить вещь рядом", func() -> void: dream.shift_vignette())
 	_button(box, "Вырастить шпиль", func() -> void: dream.show_spire())
 	_button(box, "Подняться на 100 м", _rise)
 	_button(box, "Вернуться на старт", _to_start)
+
+
+func _on_manual_journey(on: bool) -> void:
+	journey.override = journey_slider.value / 100.0 if on else -1.0
+
+
+func _on_journey_slider(v: float) -> void:
+	if journey.override >= 0.0:
+		journey.override = v / 100.0
 
 
 func _rise() -> void:
@@ -69,7 +86,8 @@ func _to_start() -> void:
 
 func _process(_delta: float) -> void:
 	if panel.visible:
-		fps_label.text = "FPS: %d   Высота: %.0f м" % [Engine.get_frames_per_second(), player.global_position.y]
+		fps_label.text = "FPS: %d   Высота: %.0f м   Путь: %d%%" % [
+			Engine.get_frames_per_second(), player.global_position.y, journey.progress * 100.0]
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -93,7 +111,7 @@ func _check(box: Container, text: String, on_toggle: Callable) -> CheckBox:
 	return check
 
 
-func _slider(box: Container, text: String, min_value: float, max_value: float, value: float, on_change: Callable) -> void:
+func _slider(box: Container, text: String, min_value: float, max_value: float, value: float, on_change: Callable) -> HSlider:
 	var label := Label.new()
 	box.add_child(label)
 	var slider := HSlider.new()
@@ -106,8 +124,9 @@ func _slider(box: Container, text: String, min_value: float, max_value: float, v
 		label.text = "%s: %.0f" % [text, v]
 		on_change.call(v)
 	slider.value_changed.connect(update)
-	update.call(value)
+	label.text = "%s: %.0f" % [text, value]
 	box.add_child(slider)
+	return slider
 
 
 func _button(box: Container, text: String, on_press: Callable) -> void:

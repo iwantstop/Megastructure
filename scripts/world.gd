@@ -18,6 +18,19 @@ var signal_amber: StandardMaterial3D
 var fog_volume: FogVolume
 var fog_origin := Vector3(0, 25, -150)
 var time := 0.0
+var shared_noise: NoiseTexture2D
+var neon: Array[StandardMaterial3D] = []
+var neon_energy: Array[float] = []
+
+const AD_TEXTS := [
+	"КУПИ СЕБЕ СЧАСТЬЕ", "БОЛЬШЕ. ЕЩЁ. СЕЙЧАС.", "ТЫ ЗАСЛУЖИВАЕШЬ ВСЁ", "ЛЮБОВЬ 24/7",
+	"ДОВЕРЯЙ ТОЛЬКО СЕБЕ", "ПОБЕДИ БЛИЖНЕГО", "ЗАБУДЬ", "КРЕДИТ НА ЖИЗНЬ",
+	"БУДЬ ЛУЧШЕ ДРУГИХ", "ВОЗЬМИ ВСЁ", "НИКТО НЕ УЗНАЕТ", "НАСЛАЖДАЙСЯ",
+]
+const NEON_COLORS := [
+	Color(1.0, 0.1, 0.55), Color(0.1, 0.85, 1.0), Color(1.0, 0.15, 0.1),
+	Color(1.0, 0.55, 0.1), Color(0.6, 0.2, 1.0), Color(0.9, 0.95, 1.0),
+]
 
 
 func _ready() -> void:
@@ -39,18 +52,34 @@ func _ready() -> void:
 	_make_window_lights(structures.lights)
 
 	var player := _spawn_player()
-	_make_ash(player)
-	_make_hint()
+	var rain := _make_rain(player)
+	_make_ads(structures.ads)
+	var mountain_mat := _make_mountain()
+	var clouds_mat := _make_clouds()
 
 	var dream = preload("res://scripts/dream.gd").new()
 	dream.setup(sun, sky_mat, vignettes, mats.concrete_dark)
 	add_child(dream)
 	var presence = preload("res://scripts/presence.gd").new()
 	add_child(presence)
-	add_child(preload("res://scripts/ambient.gd").new())
+	var ambient = preload("res://scripts/ambient.gd").new()
+	add_child(ambient)
+	var falls = preload("res://scripts/falls.gd").new()
+	falls.setup(structures.roofs)
+	add_child(falls)
+
+	var journey = preload("res://scripts/journey.gd").new()
+	journey.setup({"player": player, "sun": sun, "sky": sky_mat, "env": env, "rain": rain, "ambient": ambient,
+		"bodycam_mat": bodycam.get_child(0).material, "fog": fog_volume.material,
+		"mountain_mat": mountain_mat, "clouds_mat": clouds_mat})
+	add_child(journey)
+	var intro = preload("res://scripts/intro.gd").new()
+	intro.setup(player)
+	add_child(intro)
 
 	var admin = preload("res://scripts/admin.gd").new()
-	admin.setup(player, dream, presence, env, bodycam)
+	admin.setup({"player": player, "dream": dream, "presence": presence, "env": env, "bodycam": bodycam,
+		"journey": journey, "intro": intro})
 	add_child(admin)
 
 
@@ -66,6 +95,7 @@ func _make_materials() -> Dictionary:
 	noise_tex.width = 1024
 	noise_tex.height = 1024
 	noise_tex.generate_mipmaps = true
+	shared_noise = noise_tex
 
 	var concrete := func(params: Dictionary) -> ShaderMaterial:
 		var mat := ShaderMaterial.new()
@@ -93,9 +123,9 @@ func _make_materials() -> Dictionary:
 			brick.call(Color(0.62, 0.52, 0.38)), brick.call(Color(0.45, 0.3, 0.26)),
 		],
 		"asphalt": concrete.call({"base_color": Color(0.19, 0.19, 0.2), "variation": 0.35, "grime": 0.0,
-			"tint_amount": 0.0, "streaks": 0.0, "puddles": 1.0, "roughness_value": 0.85}),
-		"sidewalk": concrete.call({"base_color": Color(0.52, 0.52, 0.51), "panel_size": 1.5, "seam_width": 0.025,
-			"seam_dark": 0.35, "grime": 0.6, "puddles": 0.5}),
+			"tint_amount": 0.0, "streaks": 0.0, "puddles": 1.4, "roughness_value": 0.35}),  # мокрый, в ледяной корке
+		"sidewalk": concrete.call({"base_color": Color(0.5, 0.5, 0.5), "panel_size": 1.5, "seam_width": 0.025,
+			"seam_dark": 0.35, "grime": 0.6, "puddles": 1.0, "roughness_value": 0.5}),
 		"soil": _plain(Color(0.2, 0.18, 0.15), 1.0, 0.0),
 		"glass": _plain(Color(0.08, 0.1, 0.12), 0.06, 0.4),
 		"glass_lit": _glow(Color(0.35, 0.28, 0.18), Color(1.0, 0.75, 0.45), 0.6),
@@ -162,10 +192,15 @@ func _glow(color: Color, emission: Color, energy: float) -> StandardMaterial3D:
 	return mat
 
 
-## Мигающий жёлтый на всех светофорах города и дрейф клочьев тумана.
+## Мигающий жёлтый на всех светофорах, мерцание неона и дрейф клочьев тумана.
 func _process(delta: float) -> void:
 	time += delta
 	signal_amber.emission_energy_multiplier = 2.5 if fmod(time, 1.6) < 0.8 else 0.0
+	for i in neon.size():
+		if randf() < 0.004:
+			neon[i].emission_energy_multiplier = neon_energy[i] * 0.15  # короткий сбой
+		else:
+			neon[i].emission_energy_multiplier = lerpf(neon[i].emission_energy_multiplier, neon_energy[i], 0.3)
 	if fog_volume:
 		fog_volume.position = fog_origin + Vector3(sin(time * 0.013) * 80.0, 0, cos(time * 0.009) * 80.0)
 
@@ -285,41 +320,131 @@ func _make_bodycam() -> CanvasLayer:
 	return layer
 
 
-## Медленно падающий пепел вокруг игрока.
-func _make_ash(player: Node3D) -> void:
+## Холодный дождь вокруг игрока. Под крышами не идёт — капли гаснут о верхние поверхности.
+func _make_rain(player: Node3D) -> GPUParticles3D:
 	var process := ParticleProcessMaterial.new()
 	process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	process.emission_box_extents = Vector3(25, 12, 25)
-	process.direction = Vector3(0, -1, 0)
-	process.spread = 30.0
-	process.initial_velocity_min = 0.1
-	process.initial_velocity_max = 0.4
-	process.gravity = Vector3(0, -0.25, 0)
-	process.turbulence_enabled = true
-	process.turbulence_noise_strength = 0.6
-	process.turbulence_noise_scale = 4.0
-	process.scale_min = 0.5
-	process.scale_max = 1.3
+	process.emission_box_extents = Vector3(18, 1, 18)
+	process.direction = Vector3(0.08, -1, 0.03)
+	process.spread = 2.0
+	process.initial_velocity_min = 20.0
+	process.initial_velocity_max = 24.0
+	process.gravity = Vector3.ZERO
+	process.collision_mode = ParticleProcessMaterial.COLLISION_HIDE_ON_CONTACT
 
-	var flake_mat := StandardMaterial3D.new()
-	flake_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	flake_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	flake_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	flake_mat.albedo_color = Color(0.85, 0.84, 0.82, 0.75)
-	var flake := QuadMesh.new()
-	flake.size = Vector2(0.035, 0.035)
-	flake.material = flake_mat
+	var drop_mat := StandardMaterial3D.new()
+	drop_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	drop_mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
+	drop_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	drop_mat.albedo_color = Color(0.75, 0.8, 0.85, 0.22)
+	var drop := QuadMesh.new()
+	drop.size = Vector2(0.012, 0.55)
+	drop.material = drop_mat
 
-	var ash := GPUParticles3D.new()
-	ash.amount = 2500
-	ash.lifetime = 14.0
-	ash.preprocess = 14.0
-	ash.local_coords = false  # пепел остаётся в мире, а облако следует за игроком
-	ash.process_material = process
-	ash.draw_pass_1 = flake
-	ash.visibility_aabb = AABB(Vector3(-40, -25, -40), Vector3(80, 50, 80))
-	ash.position = Vector3(0, 6, 0)
-	player.add_child(ash)
+	var rain := GPUParticles3D.new()
+	rain.amount = 9000
+	rain.lifetime = 0.9
+	rain.preprocess = 1.0
+	rain.local_coords = false  # капли остаются в мире, а облако следует за игроком
+	rain.process_material = process
+	rain.draw_pass_1 = drop
+	rain.visibility_aabb = AABB(Vector3(-25, -25, -25), Vector3(50, 40, 50))
+	rain.position = Vector3(0, 14, 0)
+	player.add_child(rain)
+
+	var roofs := GPUParticlesCollisionHeightField3D.new()
+	roofs.size = Vector3(44, 60, 44)
+	roofs.resolution = GPUParticlesCollisionHeightField3D.RESOLUTION_256
+	roofs.update_mode = GPUParticlesCollisionHeightField3D.UPDATE_MODE_WHEN_MOVED
+	roofs.follow_camera_enabled = true
+	add_child(roofs)
+	return rain
+
+
+## Горящие билборды: светящиеся панели с лозунгами, мерцают, освещают мокрые улицы.
+func _make_ads(spots: Array[Dictionary]) -> void:
+	for c in NEON_COLORS:
+		var mat := _glow(c * 0.6, c, 3.0)
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		neon.append(mat)
+		neon_energy.append(3.0)
+	var dark := _plain(Color(0.03, 0.03, 0.035), 0.4, 0.0)
+
+	var lights_left := 28
+	for ad in spots:
+		var xform: Transform3D = ad.xform
+		var size: Vector2 = ad.size
+		var k := rng.randi() % NEON_COLORS.size()
+		var color: Color = NEON_COLORS[k]
+		var bright_panel := rng.randf() < 0.5  # либо светящийся фон с тёмным текстом, либо наоборот
+
+		var quad := QuadMesh.new()
+		quad.size = size
+		var panel := MeshInstance3D.new()
+		panel.mesh = quad
+		panel.material_override = neon[k] if bright_panel else dark
+		panel.transform = xform
+		add_child(panel)
+
+		var text: String = AD_TEXTS[rng.randi() % AD_TEXTS.size()]
+		var label := Label3D.new()
+		label.text = text
+		label.font_size = 96
+		label.outline_size = 0
+		label.shaded = false
+		label.double_sided = false
+		label.pixel_size = minf(size.x * 0.85 / (text.length() * 96 * 0.62), size.y * 0.5 / 96.0)
+		label.modulate = Color(0.02, 0.02, 0.02) if bright_panel else color * 3.0
+		label.transform = xform.translated_local(Vector3(0, 0, 0.03))
+		add_child(label)
+
+		# Цветной отсвет на улицу — только у невысоких вывесок, чтобы не перегружать сцену.
+		if lights_left > 0 and xform.origin.y < 90.0:
+			var light := OmniLight3D.new()
+			light.light_color = color
+			light.light_energy = 2.5
+			light.omni_range = clampf(size.x * 2.5, 15.0, 40.0)
+			light.transform = xform.translated_local(Vector3(0, -size.y * 0.3, 4.0))
+			add_child(light)
+			lights_left -= 1
+
+
+## Гора за воротами — туда, где, как верит герой, его ангел. Вершина — над облаками.
+func _make_mountain() -> ShaderMaterial:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 60
+	mesh.bottom_radius = 2300
+	mesh.height = 2600
+	mesh.radial_segments = 64
+	mesh.rings = 16
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/mountain.gdshader")
+	mat.set_shader_parameter("noise_tex", shared_noise)
+	mat.set_shader_parameter("height", 2600.0)
+	mat.set_shader_parameter("cloud_level", 420.0 / 2600.0)
+	var mountain := MeshInstance3D.new()
+	mountain.mesh = mesh
+	mountain.material_override = mat
+	mountain.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mountain.position = Vector3(0, 1300, -4600)
+	add_child(mountain)
+	return mat
+
+
+## Слой свинцовых туч над всем миром.
+func _make_clouds() -> ShaderMaterial:
+	var mesh := PlaneMesh.new()
+	mesh.size = Vector2(30000, 30000)
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/clouds.gdshader")
+	mat.set_shader_parameter("noise_tex", shared_noise)
+	var clouds := MeshInstance3D.new()
+	clouds.mesh = mesh
+	clouds.material_override = mat
+	clouds.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	clouds.position = Vector3(0, 420, 0)
+	add_child(clouds)
+	return mat
 
 
 ## Тёплый свет в некоторых окнах.
@@ -337,8 +462,7 @@ func _make_window_lights(points: Array[Vector3]) -> void:
 
 func _spawn_player() -> CharacterBody3D:
 	var player: CharacterBody3D = preload("res://scripts/player.gd").new()
-	player.position = Vector3(0, 0.2, 25)
-	player.rotation.y = 0.0
+	player.position = Vector3(4, 0.2, 86)  # у подножия самой высокой башни
 	add_child(player)
 	return player
 

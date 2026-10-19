@@ -22,6 +22,10 @@ var chord_index := 0
 var chord_timer := 0.0
 var t := 0.0
 
+var rain_level := 1.0  # шум дождя, меняется по ходу пути (journey.gd)
+var rain_lp := 0.0
+var rain_lp2 := 0.0
+
 var drop_freq := 0.0
 var drop_phase := 0.0
 var drop_age := 10.0
@@ -99,4 +103,13 @@ func _process(delta: float) -> void:
 			left += dv
 			right += dv
 
-		playback.push_frame(Vector2(left, right) * 0.1)
+		var mix := Vector2(left, right) * 0.1
+
+		# Дождь: шум, сглаженный до ровного шелеста.
+		if rain_level > 0.01:
+			rain_lp += (randf() * 2.0 - 1.0 - rain_lp) * 0.25
+			rain_lp2 += (rain_lp - rain_lp2) * 0.35
+			var r := rain_lp2 * 0.5 * rain_level
+			mix += Vector2(r, r * 0.9)
+
+		playback.push_frame(mix)
