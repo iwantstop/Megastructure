@@ -50,10 +50,20 @@ func _init(builder: Builder, random: RandomNumberGenerator, materials: Dictionar
 	m = materials
 
 
+## Платформа города висит над бездной: края, мост к горе.
+const PLATFORM := Rect2(-268, -368, 536, 518)  # x, z, ширина, глубина (включая подножие башни героя)
+const CAUSEWAY_END := -2350.0                   # мост над бездной тянется до подножия горы
+const ABYSS := -900.0                            # докуда уходят основания построек (дальше — туман)
+
+var walk_spots: Array[Vector3] = []   # где можно стоять: для вещей и прочего
+var wells: Dictionary = {}            # Vector2i квартала -> true: провалы в бездну
+
+
 func build() -> void:
-	_ground()
 	_colonnade()
 	_city()
+	_platform()
+	_causeway()
 	reserve(TALLEST_TOWER.x, TALLEST_TOWER.z, 60)
 	_tallest_tower()
 	_gate(Vector3(0, 0, -480), 0.0, 90.0, 260.0)
@@ -65,28 +75,22 @@ func build() -> void:
 		if p != null:
 			_wall(p.x, p.y, rng.randf() * TAU, rng.randf_range(250, 800), rng.randf_range(50, 220))
 
-	# Несколько высоченных башен с пандусами — можно подняться на 150–250 м.
-	for i in 4:
-		var p = spot(330, 600, 40)
-		if p != null:
-			_ramp_tower(p.x, p.y, 20.0, rng.randf_range(150, 250))
-
-	for i in 110:
-		var p = spot(380, 2000, 70)
+	# Гиганты до горизонта: аркологии с тысячами окон и бетонные мегаструктуры.
+	for i in 150:
+		var p = spot(330, 2400, 60)
 		if p == null:
 			continue
 		var roll := rng.randf()
-		if roll < 0.5:
-			_slab_tower(p.x, p.y, rng.randf_range(30, 110), rng.randf_range(30, 110), rng.randf_range(180, 1000))
-		elif roll < 0.7:
-			_round_tower(p.x, p.y, rng.randf_range(15, 50), rng.randf_range(200, 900))
-		elif roll < 0.85:
-			_lattice(p.x, p.y, rng.randf_range(50, 130), rng.randf_range(150, 500))
+		if roll < 0.55:
+			_slab_tower(p.x, p.y, rng.randf_range(30, 110), rng.randf_range(30, 110), rng.randf_range(250, 1200))
+		elif roll < 0.72:
+			_round_tower(p.x, p.y, rng.randf_range(15, 50), rng.randf_range(250, 1000))
+		elif roll < 0.86:
+			_lattice(p.x, p.y, rng.randf_range(50, 130), rng.randf_range(150, 600))
 		else:
 			_needles(p.x, p.y)
 
 	_bridges_and_pipes()
-	_clutter()
 
 
 # --- Размещение --------------------------------------------------------------
@@ -96,8 +100,10 @@ func reserve(x: float, z: float, r: float) -> void:
 
 
 func is_free(x: float, z: float, r: float) -> bool:
-	if district.grow(r).has_point(Vector2(x, z)):
+	if PLATFORM.grow(r + 20.0).has_point(Vector2(x, z)):
 		return false
+	if absf(x) < r + 30.0 and z < PLATFORM.position.y + r and z > CAUSEWAY_END - r:
+		return false  # мост к горе
 	for o in occupied:
 		if Vector2(x, z).distance_to(Vector2(o.x, o.y)) < r + o.z:
 			return false
@@ -115,6 +121,16 @@ func spot(min_d: float, max_d: float, r: float) -> Variant:
 			reserve(x, z, r)
 			return Vector2(x, z)
 	return null
+
+
+## Есть ли пол в этой точке на уровне улиц: не над колодцем, не за краем платформы (кроме моста).
+func has_floor(p: Vector2) -> bool:
+	var cell := Vector2i(roundi(p.x / PITCH), roundi(p.y / PITCH))
+	if wells.has(cell) and absf(p.x - cell.x * PITCH) < PLATE / 2.0 + 0.5 and absf(p.y - cell.y * PITCH) < PLATE / 2.0 + 0.5:
+		return false
+	if PLATFORM.has_point(p):
+		return true
+	return absf(p.x) < 13.0 and p.y < PLATFORM.position.y and p.y > CAUSEWAY_END
 
 
 func _yaw_at(x: float, z: float) -> Transform3D:
@@ -141,9 +157,25 @@ func _ramp(t: Transform3D, from_local: Vector3, to_local: Vector3, width: float,
 		b.collider_box(center, size, basis)
 	for side in [1, 2]:
 		if railings & side:
-			var dir_sign := 1.0 if side == 1 else -1.0
-			var rc := (a + c) / 2.0 + basis.x * (dir_sign * (width / 2.0 - 0.06)) + basis.y * 0.5
-			b.box(rc, Vector3(0.12, 1.0, dir.length()), m.metal, basis)
+			var off := basis.x * ((1.0 if side == 1 else -1.0) * (width / 2.0 - 0.06))
+			_railing(a + off, c + off)
+
+
+## Решётчатые перила от точки до точки (точки — на уровне пола): поручень, средняя планка, стойки.
+## Невидимая стенка вдоль них не даёт упасть.
+func _railing(a: Vector3, c: Vector3) -> void:
+	var dir := c - a
+	var length := dir.length()
+	if length < 0.2:
+		return
+	var basis := Basis.looking_at(dir / length, Vector3.UP)
+	var mid := (a + c) / 2.0
+	b.box(mid + Vector3.UP * 1.05, Vector3(0.06, 0.06, length), m.metal, basis, false)
+	b.box(mid + Vector3.UP * 0.55, Vector3(0.03, 0.03, length), m.metal, basis, false)
+	var posts := maxi(int(length / 2.5), 1)
+	for i in posts + 1:
+		b.box(a.lerp(c, float(i) / posts) + Vector3.UP * 0.53, Vector3(0.05, 1.06, 0.05), m.metal, Basis.IDENTITY, false)
+	b.collider_box(mid + Vector3.UP * 0.55, Vector3(0.1, 1.1, length), basis)
 
 
 ## Лестница из ступеней (поднимается в сторону -Z локально) + невидимый пандус под ней.
@@ -163,8 +195,91 @@ func _stairs(t: Transform3D, bottom: Vector3, h: float, width: float, mat: Mater
 
 # --- Земля и колоннада -------------------------------------------------------
 
-func _ground() -> void:
-	b.box(Vector3(0, -1, 0), Vector3(40000, 2, 40000), m.ground)
+## Пол города — плиты кварталов и полосы улиц толщиной 30 м. Там, где квартал-колодец, плиты нет.
+## По краю платформы — перила (кроме выхода на мост), под ней — опоры, уходящие в бездну.
+func _platform() -> void:
+	var thick := 30.0
+	for i in range(-5, 6):
+		for j in range(-7, 2):
+			if wells.has(Vector2i(i, j)):
+				_well(i * PITCH, j * PITCH)
+			else:
+				b.box(Vector3(i * PITCH, -thick / 2.0, j * PITCH), Vector3(PLATE, thick, PLATE), m.ground)
+	var x0 := PLATFORM.position.x
+	var x1 := PLATFORM.end.x
+	var z0 := PLATFORM.position.y
+	var z1 := PLATFORM.end.y
+	for i in range(-6, 6):
+		var x := (i + 0.5) * PITCH
+		b.box(Vector3(x, -thick / 2.0, (z0 + 76.0) / 2.0), Vector3(8, thick, 76.0 - z0), m.ground)
+	for j in range(-8, 2):
+		var z := (j + 0.5) * PITCH
+		b.box(Vector3(0, -thick / 2.0, z), Vector3(x1 - x0, thick, 8), m.ground)
+	b.box(Vector3(0, -thick / 2.0, z0 + 2.0), Vector3(x1 - x0, thick, 4), m.ground)
+	b.box(Vector3(0, -thick / 2.0, (76.0 + z1) / 2.0), Vector3(x1 - x0, thick, z1 - 76.0), m.ground)
+
+	# Перила по краю; на юге — проход на мост к горе.
+	_railing(Vector3(x0, 0, z1), Vector3(x1, 0, z1))
+	_railing(Vector3(x0, 0, z0), Vector3(x0, 0, z1))
+	_railing(Vector3(x1, 0, z0), Vector3(x1, 0, z1))
+	_railing(Vector3(x0, 0, z0), Vector3(-16, 0, z0))
+	_railing(Vector3(16, 0, z0), Vector3(x1, 0, z0))
+
+	# Опоры под городом, на них — редкие огни, чтобы чувствовалась глубина.
+	var px := x0 + 40.0
+	while px < x1:
+		var pz := z0 + 40.0
+		while pz < z1:
+			b.box(Vector3(px, (ABYSS - thick) / 2.0, pz), Vector3(18, -ABYSS - thick, 18), m.weathered, Basis.IDENTITY, false)
+			for depth in [-80.0, -220.0, -420.0]:
+				b.box(Vector3(px + 9.1, depth, pz), Vector3(0.2, 1.5, 0.6), m.beacon, Basis.IDENTITY, false)
+			pz += 96.0
+		px += 96.0
+
+
+## Квартал-колодец: провал в бездну. Стены шахты в окнах уходят вниз, поперёк — узкий мостик.
+func _well(cx: float, cz: float) -> void:
+	var half := PLATE / 2.0
+	var depth := 400.0
+	var wall: Material = _pick(m.arcology)
+	for s in [-1.0, 1.0]:
+		b.box(Vector3(cx + s * (half - 1.0), -depth / 2.0, cz), Vector3(2, depth, PLATE), wall, Basis.IDENTITY, false)
+		b.box(Vector3(cx, -depth / 2.0, cz + s * (half - 1.0)), Vector3(PLATE - 4.0, depth, 2), wall, Basis.IDENTITY, false)
+	for s in [-1.0, 1.0]:
+		_railing(Vector3(cx - half, 0, cz + s * half), Vector3(cx + half, 0, cz + s * half))
+		_railing(Vector3(cx + s * half, 0, cz - half), Vector3(cx + s * half, 0, cz - 1.6))
+		_railing(Vector3(cx + s * half, 0, cz + 1.6), Vector3(cx + s * half, 0, cz + half))
+	# Мостик через провал, с перилами.
+	_ramp(Transform3D.IDENTITY, Vector3(cx - half, 0.02, cz), Vector3(cx + half, 0.02, cz), 3.0, m.concrete_dark, true, 3)
+
+
+## Мост над бездной от края города к подножию горы. Широкий, с перилами, фонарями и опорами.
+func _causeway() -> void:
+	var z0 := PLATFORM.position.y
+	var length := z0 - CAUSEWAY_END
+	var mid := (z0 + CAUSEWAY_END) / 2.0
+	var width := 28.0
+	b.box(Vector3(0, -4, mid), Vector3(width, 8, length), m.ground)
+	b.box(Vector3(0, 0, mid), Vector3(8, 0.1, length), m.stone, Basis.IDENTITY, false)
+	for s in [-1.0, 1.0]:
+		_railing(Vector3(s * (width / 2.0 - 0.1), 0, z0), Vector3(s * (width / 2.0 - 0.1), 0, CAUSEWAY_END))
+	var z := z0 - 30.0
+	while z > CAUSEWAY_END:
+		_lamp_post(Vector3(12.5, 0, z), PI / 2.0)
+		_lamp_post(Vector3(-12.5, 0, z - 30.0), -PI / 2.0)
+		walk_spots.append(Vector3(rng.randf_range(-8, 8), 0, z - 15.0))
+		z -= 60.0
+	z = z0 - 80.0
+	while z > CAUSEWAY_END:
+		b.box(Vector3(0, (ABYSS - 8.0) / 2.0, z), Vector3(14, -ABYSS - 8.0, 14), m.weathered, Basis.IDENTITY, false)
+		z -= 160.0
+	# Широкая площадка в конце — у подножия горы.
+	b.box(Vector3(0, -4, CAUSEWAY_END - 30.0), Vector3(80, 8, 60), m.ground)
+
+
+## Основание постройки, уходящее в бездну (без коллизии — туда не дойти).
+func _foundation(center: Vector3, size: Vector2, basis: Basis, mat: Material) -> void:
+	b.box(Vector3(center.x, ABYSS / 2.0, center.z), Vector3(size.x, -ABYSS, size.y), mat, basis, false)
 
 
 func _colonnade() -> void:
@@ -209,14 +324,16 @@ func _city() -> void:
 			elif roll < 0.82:
 				_sidewalk_plate(cx, cz)
 				_park(cx, cz)
-			elif roll < 0.88:
+			elif roll < 0.86:
 				_parking_lot(cx, cz)
-			elif roll < 0.94:
+			elif roll < 0.9:
 				_sidewalk_plate(cx, cz)
 				_ramp_tower(cx, cz, rng.randf_range(12, 16), rng.randf_range(40, 110))
-			else:
+			elif roll < 0.93:
 				_sidewalk_plate(cx, cz)
 				_construction_site(cx, cz)
+			else:
+				wells[Vector2i(i, j)] = true  # провал в бездну; стены и мостик строит _platform
 
 	_roads()
 	_levels()
@@ -291,11 +408,20 @@ func _deck_ring(c: Vector2, hubs: Dictionary) -> void:
 			rail_from += 4.0
 		if hubs.has(_crossing_key(ends[1])):
 			rail_to -= 4.0
-		var rail_len := rail_to - rail_from
-		var rail_mid := (rail_from + rail_to) / 2.0
-		var rail_center := Vector3(c.x + rail_mid, L1 + 0.5, c.y + sgn * (outer - 0.05)) if along_x \
-			else Vector3(c.x + sgn * (outer - 0.05), L1 + 0.5, c.y + rail_mid)
-		b.box(rail_center, Vector3(rail_len, 1.0, 0.1) if along_x else Vector3(0.1, 1.0, rail_len), m.metal)
+		var edge := sgn * (outer - 0.05)
+		if along_x:
+			_railing(Vector3(c.x + rail_from, L1, c.y + edge), Vector3(c.x + rail_to, L1, c.y + edge))
+		else:
+			_railing(Vector3(c.x + edge, L1, c.y + rail_from), Vector3(c.x + edge, L1, c.y + rail_to))
+
+		# Тёплые светильники на стене вдоль галереи.
+		var lamp := -inner + 4.0
+		var wall := sgn * (inner + 0.08)
+		while lamp < inner - 2.0:
+			var at := Vector3(c.x + lamp, L1 + 2.6, c.y + wall) if along_x else Vector3(c.x + wall, L1 + 2.6, c.y + lamp)
+			b.box(at, Vector3(0.6, 0.12, 0.16) if along_x else Vector3(0.16, 0.12, 0.6), m.lamp_warm, Basis.IDENTITY, false)
+			lamp += 8.0
+		walk_spots.append(Vector3(center.x, L1, center.z))
 
 		# Опоры и иногда неоновая полоса снизу.
 		var p := -outer + 4.0
@@ -325,12 +451,14 @@ func _hub(c: Vector2, has_tower: bool) -> void:
 		_ring_platform(Vector3(c.x, L1, c.y), half * 2.0, 3.6, m.concrete_dark)
 	else:
 		b.box(Vector3(c.x, L1 - 0.2, c.y), Vector3(half * 2.0, 0.4, half * 2.0), m.concrete_dark)
-	# Перила посередине каждой стороны — там под хабом пустая улица.
+	# Перила посередине каждой стороны — там под хабом пустая улица. С востока у башни — лестница.
 	for s in [-1.0, 1.0]:
-		b.box(Vector3(c.x, L1 + 0.5, c.y + s * (half - 0.05)), Vector3(5.0, 1.0, 0.1), m.metal)
+		var e := half - 0.05
+		_railing(Vector3(c.x - 2.5, L1, c.y + s * e), Vector3(c.x + 2.5, L1, c.y + s * e))
 		if not has_tower or s < 0.0:
-			b.box(Vector3(c.x + s * (half - 0.05), L1 + 0.5, c.y), Vector3(0.1, 1.0, 5.0), m.metal)
+			_railing(Vector3(c.x + s * e, L1, c.y - 2.5), Vector3(c.x + s * e, L1, c.y + 2.5))
 	access_points.append(Vector3(c.x + 4.5, L1 + 0.3, c.y + 4.5))
+	walk_spots.append(Vector3(c.x + 4.5, L1, c.y - 4.5))
 
 
 ## Квадратная площадка с квадратным проёмом в центре (под шахту лифта). y — уровень пола.
@@ -356,19 +484,32 @@ func _access_tower(c: Vector2) -> void:
 	for level in [L2, L3]:
 		_ring_platform(Vector3(c.x, level, c.y), 10.0, 3.6, m.concrete_dark)
 		# Перила площадки; проёмы там, куда подходят мосты (L2 — по X, L3 — по Z).
+		var e := 4.95
 		for s in [-1.0, 1.0]:
 			if level == L3:
-				b.box(Vector3(c.x + s * 4.95, level + 0.5, c.y), Vector3(0.1, 1.0, 10.0), m.metal)
-				for k in [-1.0, 1.0]:
-					b.box(Vector3(c.x + k * 3.5, level + 0.5, c.y + s * 4.95), Vector3(3.0, 1.0, 0.1), m.metal)
+				_railing(Vector3(c.x + s * e, level, c.y - e), Vector3(c.x + s * e, level, c.y + e))
+				_railing(Vector3(c.x - e, level, c.y + s * e), Vector3(c.x - 2.0, level, c.y + s * e))
+				_railing(Vector3(c.x + 2.0, level, c.y + s * e), Vector3(c.x + e, level, c.y + s * e))
 			else:
-				b.box(Vector3(c.x, level + 0.5, c.y + s * 4.95), Vector3(10.0, 1.0, 0.1), m.metal)
-				for k in [-1.0, 1.0]:
-					b.box(Vector3(c.x + s * 4.95, level + 0.5, c.y + k * 3.5), Vector3(0.1, 1.0, 3.0), m.metal)
+				_railing(Vector3(c.x - e, level, c.y + s * e), Vector3(c.x + e, level, c.y + s * e))
+				_railing(Vector3(c.x + s * e, level, c.y - e), Vector3(c.x + s * e, level, c.y - 2.0))
+				_railing(Vector3(c.x + s * e, level, c.y + 2.0), Vector3(c.x + s * e, level, c.y + e))
 		access_points.append(Vector3(c.x + 3.5, level + 0.3, c.y + 3.5))
 
+	# Ограждение шахты на каждом уровне; проход с юга (-Z) закрывает створка,
+	# которая открывается, только когда платформа стоит на этом уровне.
+	var gates: Array[Vector3] = []
+	for level in [L1, L2, L3]:
+		var f := 1.85
+		_railing(Vector3(c.x - f, level, c.y + f), Vector3(c.x + f, level, c.y + f))
+		_railing(Vector3(c.x - f, level, c.y - f), Vector3(c.x - f, level, c.y + f))
+		_railing(Vector3(c.x + f, level, c.y - f), Vector3(c.x + f, level, c.y + f))
+		_railing(Vector3(c.x - f, level, c.y - f), Vector3(c.x - 0.8, level, c.y - f))
+		_railing(Vector3(c.x + 0.8, level, c.y - f), Vector3(c.x + f, level, c.y - f))
+		gates.append(Vector3(c.x, level, c.y - f))
+
 	var stops: Array[float] = [0.0, L1, L2, L3]
-	elevators.append({"pos": Vector3(c.x, 0, c.y), "stops": stops})
+	elevators.append({"pos": Vector3(c.x, 0, c.y), "stops": stops, "gates": gates})
 
 	# Лестница с дороги на хаб: подходит к перекрёстку с востока (+X), там у хаба нет перил.
 	var t := Transform3D(Basis(Vector3.UP, PI / 2.0), Vector3(c.x, 0, c.y))
@@ -685,9 +826,12 @@ func _street_furniture() -> void:
 			var center := a + dir * pos
 			if absf(center.x) > 14.0:
 				var lamp := center + side * 5.5
-				_lamp_post(Vector3(lamp.x, CURB, lamp.y), atan2(side.x, side.y))
-				if has_wires:
-					var pole := center - side * 5.5
+				if has_floor(lamp):
+					_lamp_post(Vector3(lamp.x, CURB, lamp.y), atan2(side.x, side.y))
+				var pole := center - side * 5.5
+				if not has_floor(pole):
+					last_pole = Vector3.INF  # над колодцем столба нет — провода обрываются
+				elif has_wires:
 					var top := Vector3(pole.x, CURB + 8.5, pole.y)
 					_utility_pole(Vector3(pole.x, CURB, pole.y), atan2(dir.x, dir.y))
 					if last_pole != Vector3.INF:
@@ -704,7 +848,8 @@ func _street_furniture() -> void:
 				var p := center + side * (5.0 * sgn)
 				var p3 := Vector3(p.x, CURB, p.y)
 				var yaw := atan2(side.x * sgn, side.y * sgn)
-				match rng.randi() % 5:
+				var kind := rng.randi() % 5 if has_floor(p) else -1
+				match kind:
 					0, 1: _dead_tree(p3)
 					2: _bench(p3, yaw)
 					3: b.cylinder(p3 + Vector3(0, 0.45, 0), 0.25, 0.9, m.metal)  # урна
@@ -980,7 +1125,7 @@ func _gate(c: Vector3, yaw: float, gap: float, h: float) -> void:
 	var pw := 35.0
 	for side in [-1.0, 1.0]:
 		var lx: float = side * (gap / 2.0 + pw / 2.0)
-		b.box_local(t, Vector3(lx, h / 2.0, 0), Vector3(pw, h, 30), m.weathered)
+		b.box_local(t, Vector3(lx, (h + ABYSS) / 2.0, 0), Vector3(pw, h - ABYSS, 30), m.weathered)
 		_slits(t, 0.0, h, pw, 30, lx)
 		var wp := t * Vector3(lx, 0, 0)
 		reserve(wp.x, wp.z, 30)
@@ -1000,7 +1145,7 @@ func _megaslab(c: Vector3, size: float, height: float) -> void:
 		for j in 3:
 			var px := c.x + (i - 1) * size * 0.35
 			var pz := c.z + (j - 1) * size * 0.35
-			b.box(Vector3(px, height / 2.0, pz), Vector3(28, height, 28), m.weathered)
+			b.box(Vector3(px, (height + ABYSS) / 2.0, pz), Vector3(28, height - ABYSS, 28), m.weathered, Basis.IDENTITY, false)
 			reserve(px, pz, 30)
 	# Конструкции, свисающие с потолка.
 	for k in 7:
@@ -1032,7 +1177,7 @@ func _wall(x: float, z: float, yaw: float, length: float, h: float) -> void:
 		var end := minf(pos + rng.randf_range(60, 160), length / 2.0)
 		var seg := end - pos
 		var mid := pos + seg / 2.0
-		b.box_local(t, Vector3(mid, h / 2.0, 0), Vector3(seg, h, thick), m.panels)
+		b.box_local(t, Vector3(mid, (h + ABYSS) / 2.0, 0), Vector3(seg, h - ABYSS, thick), m.panels, false)
 		b.box_local(t, Vector3(mid, h + 1.5, 0), Vector3(seg, 3, thick + 4), m.concrete_dark, false)
 		var bx := pos + 12.0
 		while bx < end - 6.0:
@@ -1045,7 +1190,9 @@ func _wall(x: float, z: float, yaw: float, length: float, h: float) -> void:
 func _slab_tower(x: float, z: float, w: float, d: float, h: float) -> void:
 	var t := _yaw_at(x, z)
 	var roll := rng.randf()
-	var mat: Material = m.weathered if roll < 0.4 else (m.tower_panels if roll < 0.75 else m.concrete)
+	# Чаще всего — аркология с тысячами окон, иногда — глухой бетонный гигант.
+	var mat: Material = _pick(m.arcology) if roll < 0.6 else (m.weathered if roll < 0.8 else m.tower_panels)
+	_foundation(Vector3(x, 0, z), Vector2(w, d), t.basis, mat)
 	var footprint := maxf(w, d)
 	var d_base := d
 	var near := Vector2(x, z).length() < 800.0  # мелкие детали — только у ближних
@@ -1053,21 +1200,21 @@ func _slab_tower(x: float, z: float, w: float, d: float, h: float) -> void:
 	var y := 0.0
 	for tier in tiers:
 		var th := h if tiers == 1 else (h * 0.6 if tier == 0 else h * 0.4 / (tiers - 1))
-		b.box_local(t, Vector3(0, y + th / 2.0, 0), Vector3(w, th, d), mat, y < 80.0)
+		b.box_local(t, Vector3(0, y + th / 2.0, 0), Vector3(w, th, d), mat, false)
 		# Карнизы.
 		var ledge_y := y + rng.randf_range(25, 45)
 		while ledge_y < y + th - 5.0:
 			b.box_local(t, Vector3(0, ledge_y, 0), Vector3(w + 3, 1.5, d + 3), m.concrete_dark, false)
 			ledge_y += rng.randf_range(30, 60)
-		if near and rng.randf() < 0.6:
-			_slits(t, y, th, w, d, 0.0)
+		if near and roll >= 0.6 and rng.randf() < 0.6:
+			_slits(t, y, th, w, d, 0.0)  # у аркологий окна рисует шейдер, щели только у бетонных
 		# Рёбра по бокам.
 		if tier == 0 and rng.randf() < 0.5:
 			var fins := maxi(int(d / 12.0), 2)
 			for f in fins:
 				var fz := -d / 2.0 + (f + 0.5) * d / fins
 				for side in [-1.0, 1.0]:
-					b.box_local(t, Vector3(side * (w / 2.0 + 1.0), th / 2.0, fz), Vector3(2, th, 2.5), mat)
+					b.box_local(t, Vector3(side * (w / 2.0 + 1.0), th / 2.0, fz), Vector3(2, th, 2.5), mat, false)
 		y += th
 		w *= rng.randf_range(0.55, 0.85)
 		d *= rng.randf_range(0.55, 0.85)
@@ -1099,7 +1246,8 @@ func _slits(t: Transform3D, y: float, th: float, w: float, d: float, offset_x: f
 
 func _round_tower(x: float, z: float, r: float, h: float) -> void:
 	var c := Vector3(x, 0, z)
-	b.cylinder(c + Vector3(0, h / 2.0, 0), r, h, m.concrete)
+	var mat: Material = _pick(m.arcology) if rng.randf() < 0.5 else m.concrete
+	b.cylinder(c + Vector3(0, (h + ABYSS) / 2.0, 0), r, h - ABYSS, mat, Basis.IDENTITY, false)
 	var ry := rng.randf_range(20, 40)
 	while ry < h:
 		b.cylinder(c + Vector3(0, ry, 0), r + 1.5, 2.0, m.metal, Basis.IDENTITY, false)
@@ -1107,13 +1255,15 @@ func _round_tower(x: float, z: float, r: float, h: float) -> void:
 	b.cylinder(c + Vector3(0, h + 8, 0), r * 0.6, 16, m.concrete_dark, Basis.IDENTITY, false)
 	if rng.randf() < 0.5:
 		var core := Vector3(r * 0.8, h * 0.9, r * 0.8)
-		b.box(c + Vector3(r, core.y / 2.0, 0), core, m.weathered)
+		b.box(c + Vector3(r, (core.y + ABYSS) / 2.0, 0), Vector3(core.x, core.y - ABYSS, core.z), m.weathered, Basis.IDENTITY, false)
 	towers.append({"pos": c, "height": h, "radius": r})
 
 
 ## Голый бетонный каркас: колонны и перекрытия, часть этажей обрушена.
 func _lattice(x: float, z: float, size: float, h: float) -> void:
 	var t := _yaw_at(x, z)
+	if not PLATFORM.has_point(Vector2(x, z)):
+		_foundation(Vector3(x, 0, z), Vector2(size * 0.9, size * 0.9), t.basis, m.concrete_dark)
 	var n := rng.randi_range(2, 4)
 	var step := size / (n - 1)
 	var col := rng.randf_range(2, 9) if size > 40 else rng.randf_range(0.5, 0.8)
@@ -1136,8 +1286,8 @@ func _needles(x: float, z: float) -> void:
 	for i in rng.randi_range(3, 7):
 		var nw := rng.randf_range(6, 16)
 		var nh := rng.randf_range(200, 900)
-		var pos := Vector3(x + rng.randf_range(-40, 40), nh / 2.0, z + rng.randf_range(-40, 40))
-		b.box(pos, Vector3(nw, nh, nw), m.weathered, Basis(Vector3.UP, rng.randf() * TAU))
+		var pos := Vector3(x + rng.randf_range(-40, 40), (nh + ABYSS) / 2.0, z + rng.randf_range(-40, 40))
+		b.box(pos, Vector3(nw, nh - ABYSS, nw), m.weathered, Basis(Vector3.UP, rng.randf() * TAU), false)
 		top = maxf(top, nh)
 	towers.append({"pos": Vector3(x, 0, z), "height": top, "radius": 30.0})
 
@@ -1167,81 +1317,3 @@ func _bridges_and_pipes() -> void:
 				var basis := Basis(Quaternion(Vector3.UP, dir.normalized()))
 				b.cylinder(mid + Vector3(0, y, 0), rng.randf_range(2, 5), dist, m.metal, basis, false)
 				pipes += 1
-
-
-# --- Мелочи у земли за городом -----------------------------------------------
-
-func _clutter() -> void:
-	for i in 120:
-		var kind := rng.randi() % 7
-		var radius: float = [12.0, 14.0, 6.0, 20.0, 15.0, 25.0, 18.0][kind]
-		var p = spot(290, 800, radius)
-		if p == null:
-			continue
-		match kind:
-			0: _fallen_pillar(p.x, p.y)
-			1: _low_wall(p.x, p.y)
-			2: _debris(p.x, p.y)
-			3: _platform(p.x, p.y)
-			4: _floor_plates(p.x, p.y)
-			5: _pillar_row(p.x, p.y)
-			6: _monolith(p.x, p.y)
-
-
-func _fallen_pillar(x: float, z: float) -> void:
-	var length := rng.randf_range(12, 24)
-	var s := rng.randf_range(2.5, 4.0)
-	var basis := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, PI / 2.0)
-	b.box(Vector3(x, s / 2.0, z), Vector3(s, length, s), m.concrete, basis)
-
-
-func _low_wall(x: float, z: float) -> void:
-	var t := _yaw_at(x, z)
-	var length := rng.randf_range(8, 26)
-	var h := rng.randf_range(1.5, 5)
-	var mat: Material = m.panels if rng.randf() < 0.5 else m.concrete
-	b.box_local(t, Vector3(0, h / 2.0, 0), Vector3(length, h, rng.randf_range(0.6, 1.5)), mat)
-
-
-func _debris(x: float, z: float) -> void:
-	for i in rng.randi_range(3, 8):
-		var s := rng.randf_range(0.5, 3.0)
-		var pos := Vector3(x + rng.randf_range(-5, 5), s * 0.35, z + rng.randf_range(-5, 5))
-		var basis := Basis.from_euler(Vector3(rng.randf() * TAU, rng.randf() * TAU, rng.randf() * TAU))
-		var mat: Material = m.concrete if rng.randf() < 0.6 else m.concrete_dark
-		b.box(pos, Vector3.ONE * s, mat, basis, s > 1.2)
-
-
-## Платформа с лестницей — можно забраться и осмотреться.
-func _platform(x: float, z: float) -> void:
-	var t := _yaw_at(x, z)
-	var w := rng.randf_range(10, 22)
-	var h := rng.randf_range(2, 7)
-	var d := rng.randf_range(10, 22)
-	b.box_local(t, Vector3(0, h / 2.0, 0), Vector3(w, h, d), m.concrete)
-	# Лестница поднимается к краю платформы со стороны +Z.
-	var steps := int(ceil(h / 0.2))
-	_stairs(t, Vector3(0, 0, d / 2.0 + steps * 0.3), h, 3.0, m.concrete_dark)
-
-
-func _floor_plates(x: float, z: float) -> void:
-	for i in rng.randi_range(2, 5):
-		var pos := Vector3(x + rng.randf_range(-8, 8), 0, z + rng.randf_range(-8, 8))
-		var size := Vector3(rng.randf_range(4, 18), 0.1, rng.randf_range(4, 18))
-		b.box(pos, size, m.stone, Basis(Vector3.UP, rng.randf() * TAU), false)
-
-
-## Ряд колонн, часть из них разрушена.
-func _pillar_row(x: float, z: float) -> void:
-	var t := _yaw_at(x, z)
-	var count := rng.randi_range(4, 8)
-	for i in count:
-		var h := rng.randf_range(3, 14) if rng.randf() < 0.6 else rng.randf_range(0.8, 3)
-		var lx := (i - count / 2.0) * 6.0
-		b.box_local(t, Vector3(lx, h / 2.0, 0), Vector3(1.6, h, 1.6), m.concrete)
-
-
-func _monolith(x: float, z: float) -> void:
-	var size := Vector3(rng.randf_range(6, 26), rng.randf_range(3, 40), rng.randf_range(6, 26))
-	var mat: Material = m.concrete if rng.randf() < 0.6 else m.weathered
-	b.box(Vector3(x, size.y / 2.0, z), size, mat, Basis(Vector3.UP, rng.randf() * TAU))

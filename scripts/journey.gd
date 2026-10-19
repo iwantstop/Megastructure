@@ -64,9 +64,9 @@ func _apply(k: float) -> void:
 	sun.light_color = Color(0.85, 0.9, 1.0).lerp(Color(1.0, 0.88, 0.7), k)
 
 	env.ambient_light_energy = lerpf(0.9, 1.15, k)
-	env.volumetric_fog_density = lerpf(0.008, 0.002, k)
+	env.volumetric_fog_density = lerpf(0.016, 0.003, k)
 	env.adjustment_saturation = lerpf(0.82, 1.05, k)
-	fog.density = lerpf(0.05, 0.0, k)
+	fog.density = lerpf(0.08, 0.0, k)
 	bodycam_mat.set_shader_parameter("saturation", lerpf(0.85, 1.0, k))
 	mountain_mat.set_shader_parameter("haze_color", horizon)
 	clouds_mat.set_shader_parameter("under_color", Color(0.28, 0.3, 0.34).lerp(Color(0.62, 0.6, 0.6), k))

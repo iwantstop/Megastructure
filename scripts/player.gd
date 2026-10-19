@@ -40,6 +40,8 @@ var land_dip := 0.0
 var move_input := Vector2.ZERO
 var was_on_floor := true
 var fall_speed := 0.0
+var last_safe := Vector3.ZERO
+var safe_timer := 0.0
 
 
 func _ready() -> void:
@@ -47,6 +49,7 @@ func _ready() -> void:
 	floor_max_angle = deg_to_rad(50)
 	floor_snap_length = 0.4
 	target_yaw = rotation.y
+	last_safe = position
 
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = 0.35
@@ -125,6 +128,16 @@ func _physics_process(delta: float) -> void:
 	if is_on_floor() and not was_on_floor and fall_speed > 2.0:
 		land_dip = clampf(fall_speed * 0.015, 0.0, 0.1)
 	was_on_floor = is_on_floor()
+
+	# Сорвался в бездну — возвращаемся туда, где твёрдо стоял полсекунды назад.
+	if is_on_floor():
+		safe_timer -= delta
+		if safe_timer <= 0.0:
+			last_safe = global_position
+			safe_timer = 0.5
+	if global_position.y < -150.0:
+		global_position = last_safe + Vector3.UP * 0.5
+		velocity = Vector3.ZERO
 
 
 ## Если впереди невысокое препятствие (бордюр, ступенька) — шагаем на него.

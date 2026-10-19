@@ -36,11 +36,13 @@ func place_all(parent: Node3D, structures: RefCounted) -> Array[Node3D]:
 	# Первая встреча — прямо посреди колоннады.
 	placed.append(_put(parent, _table_for_two(), Vector3(0, 0.05, -170), 0.3))
 	var makers := [_floor_lamp, _chair_alone, _bed, _bench_for_two, _door, _plant, _table_for_two, _floor_lamp, _bed]
+	# Остальное — на галереях, хабах и на мосту к горе: мир висит над бездной, ставить можно только туда.
+	var spots: Array[Vector3] = structures.walk_spots.duplicate()
 	for maker in makers:
-		var p = structures.spot(70, 900, 6)
-		if p == null:
-			continue
-		placed.append(_put(parent, maker.call(), Vector3(p.x, 0, p.y), rng.randf() * TAU))
+		if spots.is_empty():
+			break
+		var p: Vector3 = spots.pop_at(rng.randi() % spots.size())
+		placed.append(_put(parent, maker.call(), p, rng.randf() * TAU))
 
 	# Вещи внутри домов — будто хозяева только что вышли.
 	var indoor := [_table_for_two, _bed, _chair_alone, _floor_lamp, _plant, _bed, _table_for_two, _chair_alone]

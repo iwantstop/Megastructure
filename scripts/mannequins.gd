@@ -37,6 +37,7 @@ var rng: RandomNumberGenerator
 var plastic: Material
 var seat_mat: Material
 var placed: Array[Vector2] = []
+var floor_check: Callable  # есть ли пол в точке (над колодцами — нет)
 
 var torso := _capsule(0.15, 0.5)
 var hips := _capsule(0.14, 0.3)
@@ -59,7 +60,8 @@ func _init(builder: Builder, random: RandomNumberGenerator, plastic_mat: Materia
 
 
 ## Расставляет манекены по улицам, по галереям второго уровня, по бульвару и на площадях.
-func populate(streets: Array[Vector4], plazas: Array[Vector2], decks: Array[Vector4] = [], deck_y := 0.0) -> void:
+func populate(streets: Array[Vector4], plazas: Array[Vector2], decks: Array[Vector4], deck_y: float, has_floor: Callable) -> void:
+	floor_check = has_floor
 	for i in mini(30, decks.size()):
 		var s: Vector4 = decks[rng.randi() % decks.size()]
 		var a := Vector2(s.x, s.y)
@@ -106,7 +108,7 @@ func populate(streets: Array[Vector4], plazas: Array[Vector2], decks: Array[Vect
 
 
 func _place(p: Vector2, yaw: float, y := 0.0) -> void:
-	if _is_taken(p, 1.5):
+	if _is_taken(p, 1.5) or not floor_check.call(p):
 		return
 	placed.append(p)
 	if rng.randf() < 0.15:

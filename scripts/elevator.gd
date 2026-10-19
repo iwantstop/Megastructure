@@ -9,6 +9,9 @@ const WAIT := 4.0
 var stops: Array[float] = []
 var index := 0
 var step := 1
+var gates: Array[Dictionary] = []  # по остановкам: {shape, light} или пусто
+var closed_mat: Material
+var open_mat: Material
 
 
 func setup(p_stops: Array[float], start_index: int, mat: Material, light: Material) -> void:
@@ -34,20 +37,39 @@ func setup(p_stops: Array[float], start_index: int, mat: Material, light: Materi
 	add_child(collision)
 
 
+## Створки шахты на уровнях (см. world._make_elevators).
+func set_gates(p_gates: Array[Dictionary], closed: Material, open: Material) -> void:
+	gates = p_gates
+	closed_mat = closed
+	open_mat = open
+
+
 func _ready() -> void:
 	sync_to_physics = true
 	position.y = stops[index] - 0.15
 	_wait_then_move()
 
 
+## Стоим на остановке: створка этого уровня открыта, остальные закрыты.
 func _wait_then_move() -> void:
+	_set_gates(index)
 	var tween := create_tween().set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
 	tween.tween_interval(WAIT)
 	tween.tween_callback(_move_next)
 
 
+func _set_gates(open_index: int) -> void:
+	for i in gates.size():
+		if gates[i].is_empty():
+			continue
+		var open := i == open_index
+		gates[i].shape.set_deferred("disabled", open)
+		gates[i].light.material_override = open_mat if open else closed_mat
+
+
 ## Едет к следующей остановке; на верхней и нижней разворачивается.
 func _move_next() -> void:
+	_set_gates(-1)
 	if index + step < 0 or index + step >= stops.size():
 		step = -step
 	index += step

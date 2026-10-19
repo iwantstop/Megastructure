@@ -19,7 +19,9 @@ var sky_mat: ProceduralSkyMaterial
 var env: Environment
 var signal_amber: StandardMaterial3D
 var fog_volume: FogVolume
-var fog_origin := Vector3(0, 25, -150)
+var fog_origin := Vector3(0, 10, -150)
+var searchlights: Array[SpotLight3D] = []
+var lifts: Array[Node3D] = []
 var time := 0.0
 var shared_noise: NoiseTexture2D
 var neon: Array[StandardMaterial3D] = []
@@ -49,7 +51,7 @@ func _ready() -> void:
 	var structures := Structures.new(builder, rng, mats)
 	structures.build()
 	var mannequins := Mannequins.new(builder, rng, mats.plastic, mats.concrete)
-	mannequins.populate(structures.streets, structures.plazas, structures.decks, Structures.L1)
+	mannequins.populate(structures.streets, structures.plazas, structures.decks, Structures.L1, structures.has_floor)
 	builder.finish(self)
 	_make_elevators(structures.elevators, mats)
 
@@ -65,6 +67,7 @@ func _ready() -> void:
 	var traffic = preload("res://scripts/traffic.gd").new()
 	traffic.setup(structures.streets, rng)
 	add_child(traffic)
+	_make_searchlights()
 	var mountain_mat := _make_mountain()
 	var clouds_mat := _make_clouds()
 
@@ -95,7 +98,7 @@ func _ready() -> void:
 
 	if "--demo" in OS.get_cmdline_user_args():
 		var demo = preload("res://scripts/demo.gd").new()
-		demo.setup(player, intro, structures.access_points)
+		demo.setup(player, intro, structures.access_points, lifts)
 		add_child(demo)
 
 
@@ -147,9 +150,21 @@ func _make_materials() -> Dictionary:
 		mat.set_shader_parameter("lit_chance", lit)
 		return mat
 
+	# Аркологии и стены колодцев: окна по всей высоте, в том числе ниже уровня города.
+	var arcology := func(wall: Color, cell: Vector2, window: Vector2, fins: float, lit: float) -> ShaderMaterial:
+		var mat: ShaderMaterial = facade.call(wall, cell, window, fins, lit)
+		mat.set_shader_parameter("ground_floor", -10000.0)
+		return mat
+
 	return {
 		"neon": neon,
 		"beacon": beacon,
+		"lamp_warm": _glow(Color(0.4, 0.3, 0.2), Color(1.0, 0.75, 0.45), 3.0),
+		"arcology": [
+			arcology.call(Color(0.3, 0.31, 0.33), Vector2(1.6, 3.2), Vector2(0.6, 0.5), 5.0, 0.3),
+			arcology.call(Color(0.22, 0.23, 0.26), Vector2(1.2, 3.2), Vector2(0.7, 0.6), 0.0, 0.25),
+			arcology.call(Color(0.36, 0.33, 0.3), Vector2(2.0, 3.2), Vector2(0.55, 0.45), 4.0, 0.35),
+		],
 		"facades": [
 			facade.call(Color(0.46, 0.47, 0.48), Vector2(1.8, 3.2), Vector2(0.6, 0.5), 0.0, 0.22),
 			facade.call(Color(0.34, 0.35, 0.37), Vector2(1.2, 3.2), Vector2(0.7, 0.62), 4.0, 0.18),
@@ -242,6 +257,9 @@ func _process(delta: float) -> void:
 	beacon.emission_energy_multiplier = 5.0 if fmod(time, 2.0) < 0.25 else 0.3  # огни на шпилях
 	for h in holograms:
 		h.rotate_y(delta * 0.15)
+	for i in searchlights.size():
+		var a := time * 0.12 + i * 1.7
+		searchlights[i].rotation = Vector3(deg_to_rad(55.0 + 15.0 * sin(time * 0.2 + i)), a, 0)
 	for i in neon.size():
 		if randf() < 0.004:
 			neon[i].emission_energy_multiplier = neon_energy[i] * 0.15  # короткий сбой
@@ -276,11 +294,12 @@ func _make_environment() -> void:
 	env.fog_density = 0.0012
 	env.fog_aerial_perspective = 1.0
 	env.fog_sky_affect = 1.0
-	env.fog_height = 40.0
-	env.fog_height_density = 0.006
-	# Объёмный туман: ровная лёгкая дымка + клочья из FogVolume (см. _make_fog_volume).
+	# Внизу, в бездне, туман сгущается до сплошного моря.
+	env.fog_height = -15.0
+	env.fog_height_density = 0.03
+	# Объёмный туман: ровная дымка + клочья из FogVolume (см. _make_fog_volume).
 	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.008
+	env.volumetric_fog_density = 0.016
 	env.volumetric_fog_albedo = Color(0.62, 0.63, 0.65)
 	env.volumetric_fog_length = 220.0
 	env.volumetric_fog_anisotropy = 0.35
@@ -323,14 +342,14 @@ func _make_fog_volume() -> void:
 	density.color_ramp = ramp
 
 	var fog := FogMaterial.new()
-	fog.density = 0.05
+	fog.density = 0.08
 	fog.albedo = Color(0.64, 0.65, 0.67)
 	fog.density_texture = density
 	fog.height_falloff = 0.04
 	fog.edge_fade = 0.2
 
 	fog_volume = FogVolume.new()
-	fog_volume.size = Vector3(1600, 60, 1600)
+	fog_volume.size = Vector3(1600, 120, 1600)  # от бездны под краем города до крыш галерей
 	fog_volume.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
 	fog_volume.material = fog
 	fog_volume.position = fog_origin
@@ -413,15 +432,56 @@ func _make_rain(player: Node3D) -> GPUParticles3D:
 	return rain
 
 
+## Прожекторы по краям города шарят лучами по туману и тучам.
+func _make_searchlights() -> void:
+	var spots := [Vector3(-260, 2, -360), Vector3(260, 2, -360), Vector3(-260, 2, 140), Vector3(260, 2, 140),
+		Vector3(-120, 2, -360), Vector3(120, 2, 140)]
+	for p in spots:
+		var light := SpotLight3D.new()
+		light.position = p
+		light.light_color = Color(0.85, 0.9, 1.0)
+		light.light_energy = 40.0
+		light.light_volumetric_fog_energy = 4.0
+		light.spot_range = 700.0
+		light.spot_angle = 3.5
+		light.spot_attenuation = 0.5
+		add_child(light)
+		searchlights.append(light)
+
+
 ## Лифты в башнях доступа. Стартуют с разных остановок, чтобы не ездить синхронно.
+## На каждом уровне у шахты — створка: красная и закрытая, пока платформы нет; зелёная и открытая, когда она тут.
 func _make_elevators(list: Array[Dictionary], mats: Dictionary) -> void:
+	var red := _glow(Color(0.3, 0.02, 0.02), Color(1.0, 0.1, 0.05), 3.0)
+	var green := _glow(Color(0.02, 0.3, 0.05), Color(0.2, 1.0, 0.3), 3.0)
+	var bar := BoxMesh.new()
+	bar.size = Vector3(1.6, 0.06, 0.06)
+	var gate_shape := BoxShape3D.new()
+	gate_shape.size = Vector3(1.6, 1.1, 0.1)
 	for e in list:
 		var lift = preload("res://scripts/elevator.gd").new()
 		var stops: Array[float] = e.stops
+		var gates: Array[Dictionary] = []
+		gates.append({})  # на земле створки нет
+		for p in e.gates:
+			var body := StaticBody3D.new()
+			body.position = p
+			var collision := CollisionShape3D.new()
+			collision.shape = gate_shape
+			collision.position.y = 0.55
+			body.add_child(collision)
+			var light := MeshInstance3D.new()
+			light.mesh = bar
+			light.position.y = 1.05
+			body.add_child(light)
+			add_child(body)
+			gates.append({"shape": collision, "light": light})
 		lift.setup(stops, rng.randi() % stops.size(), mats.metal, _pick_neon())
+		lift.set_gates(gates, red, green)
 		var pos: Vector3 = e.pos
 		lift.position = Vector3(pos.x, 0, pos.z)
 		add_child(lift)
+		lifts.append(lift)
 
 
 func _pick_neon() -> Material:
