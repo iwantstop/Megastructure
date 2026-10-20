@@ -677,9 +677,11 @@ func _megablock(cx: float, cz: float) -> void:
 		_skyscraper(top, rng.randf_range(18, 26), rng.randf_range(18, 26), rng.randf_range(120, 380))
 
 
-## Застеклённые воздушные мосты между соседними небоскрёбами.
+## Застеклённые воздушные мосты между соседними небоскрёбами — не больше двух на башню,
+## иначе из первой же башни расходится веер ко всем соседям.
 func _skybridges() -> void:
 	var made := 0
+	var per_tower := {}
 	for a in city_towers.size():
 		for c in range(a + 1, city_towers.size()):
 			if made >= 25:
@@ -692,6 +694,10 @@ func _skybridges() -> void:
 			var ha: float = city_towers[a].height
 			var hb: float = city_towers[c].height
 			var y := maxf(pa.y, pb.y) + minf(ha, hb) * rng.randf_range(0.3, 0.45)
+			if per_tower.get(a, 0) >= 2 or per_tower.get(c, 0) >= 2:
+				continue
+			per_tower[a] = per_tower.get(a, 0) + 1
+			per_tower[c] = per_tower.get(c, 0) + 1
 			var mid := Vector3((pa.x + pb.x) / 2.0, y, (pa.z + pb.z) / 2.0)
 			var basis := Basis(Vector3.UP, atan2(pb.x - pa.x, pb.z - pa.z))
 			b.box(mid, Vector3(5, 3.5, dist), _facade_mat(), basis, false)
@@ -1306,16 +1312,22 @@ func _needles(x: float, z: float) -> void:
 	towers.append({"pos": Vector3(x, 0, z), "height": top, "radius": 30.0})
 
 
-## Мосты и трубы между соседними башнями высоко над землёй.
+## Мосты и трубы между соседними башнями высоко над землёй — не больше трёх на башню.
 func _bridges_and_pipes() -> void:
 	var bridges := 0
 	var pipes := 0
+	var per_tower := {}
 	for a in towers.size():
 		for c in range(a + 1, towers.size()):
 			var p1: Vector3 = towers[a].pos
 			var p2: Vector3 = towers[c].pos
 			var dist := p1.distance_to(p2)
 			if dist < 120 or dist > 450:
+				continue
+			if per_tower.get(a, 0) >= 3 or per_tower.get(c, 0) >= 3:
+				continue
+			# Небоскрёбы города соединяет _skybridges — бетонные балки над улицами не нужны.
+			if PLATFORM.has_point(Vector2(p1.x, p1.z)) or PLATFORM.has_point(Vector2(p2.x, p2.z)):
 				continue
 			var top := minf(towers[a].height, towers[c].height)
 			if top < 60:
@@ -1331,3 +1343,7 @@ func _bridges_and_pipes() -> void:
 				var basis := Basis(Quaternion(Vector3.UP, dir.normalized()))
 				b.cylinder(mid + Vector3(0, y, 0), rng.randf_range(2, 5), dist, m.metal, basis, false)
 				pipes += 1
+			else:
+				continue
+			per_tower[a] = per_tower.get(a, 0) + 1
+			per_tower[c] = per_tower.get(c, 0) + 1

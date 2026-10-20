@@ -112,12 +112,15 @@ func _ready() -> void:
 	var admin = preload("res://scripts/admin.gd").new()
 	admin.setup({"player": player, "dream": dream, "presence": presence, "env": env, "bodycam": bodycam,
 		"journey": journey, "intro": intro, "finale": finale})
-	var scripted := "--demo" in OS.get_cmdline_user_args() or "--bench" in OS.get_cmdline_user_args()
+	var args := OS.get_cmdline_user_args()
+	var scripted := "--demo" in args or "--bench" in args or "--map" in args
 	if not scripted:
 		add_child(admin)  # в демо и бенчмарке панель не нужна: случайное F1 не испортит запись
 
 	_mark("всё остальное")
 
+	if "--map" in OS.get_cmdline_user_args():
+		add_child(preload("res://scripts/map.gd").new())
 	if "--bench" in OS.get_cmdline_user_args():
 		var bench = preload("res://scripts/bench.gd").new()
 		bench.setup(player, intro)

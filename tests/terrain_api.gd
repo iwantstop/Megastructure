@@ -1,12 +1,10 @@
 extends SceneTree
 
-## Печатает методы и свойства классов Terrain3D — справка по API аддона.
+## Печатает методы классов Terrain3D — справка по API аддона.
 
 func _initialize() -> void:
-	for cls in ["Terrain3D", "Terrain3DData", "Terrain3DMaterial", "Terrain3DAssets", "Terrain3DTextureAsset"]:
+	for cls in ["Terrain3DUtil"]:
 		print("=== ", cls)
-		for p in ClassDB.class_get_property_list(cls, true):
-			print("  prop ", p.name, " : ", type_string(p.type))
 		for m in ClassDB.class_get_method_list(cls, true):
 			var args := []
 			for a in m.args:

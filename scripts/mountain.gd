@@ -16,6 +16,7 @@ const START_ANGLE := PI / 2.0  # тропа начинается со сторо
 const SPACING := 2.0         # метров между точками карты высот
 const MARGIN := 220.0        # поле вокруг горы, где склон уходит в бездну
 const REGION := 1024         # точек карты высот в регионе Terrain3D
+const ABYSS_CUT := -480.0    # ниже этой высоты склон обрывается дырой — дна у бездны нет
 
 const THETA := LAPS * TAU
 const C := (R_BASE - R_TOP) / THETA  # насколько тропа приближается к центру на радиан
@@ -40,27 +41,35 @@ func _ready() -> void:
 	terrain.change_region_size(REGION)
 	terrain.collision_mode = 3  # вся гора твёрдая сразу, а не только вокруг камеры
 
-	# Terrain3D пишет карту высот с угла региона, поэтому начало карты выравниваем по сетке
-	# регионов, а всё поле вокруг горы заполняем бездной.
+	# Terrain3D пишет карту высот с угла региона, поэтому карта покрывает регионы целиком:
+	# от угла до угла. Всё, что не гора (поле вокруг и низ обрыва), — «дыры» ландшафта,
+	# сквозь них видна бездна.
 	var region_m := REGION * SPACING
 	var half := R_BASE + MARGIN
 	var origin := Vector3(floorf((CENTER.x - half) / region_m) * region_m, 0, floorf((CENTER.z - half) / region_m) * region_m)
-	var width := int(ceilf((CENTER.x + half - origin.x) / SPACING))
-	var depth := int(ceilf((CENTER.z + half - origin.z) / SPACING))
+	var width := int(ceilf((CENTER.x + half - origin.x) / region_m)) * REGION
+	var depth := int(ceilf((CENTER.z + half - origin.z) / region_m)) * REGION
 	var heights := Image.create(width, depth, false, Image.FORMAT_RF)
+	var control := Image.create(width, depth, false, Image.FORMAT_RF)
 	var colors := Image.create(width, depth, false, Image.FORMAT_RGBA8)
+	var hole := Color(Terrain3DUtil.as_float(Terrain3DUtil.enc_hole(true)), 0, 0)
 	heights.fill(Color(-800.0, 0, 0))
+	control.fill(hole)
 	colors.fill(Color(0.3, 0.29, 0.28, 0.5))
-	var px0 := int((CENTER.x - half - origin.x) / SPACING)
-	var pz0 := int((CENTER.z - half - origin.z) / SPACING)
-	for py in range(maxi(pz0, 0), depth):
-		for px in range(maxi(px0, 0), width):
+	var px0 := maxi(int((CENTER.x - half - origin.x) / SPACING), 0)
+	var pz0 := maxi(int((CENTER.z - half - origin.z) / SPACING), 0)
+	var px1 := mini(int(ceilf((CENTER.x + half - origin.x) / SPACING)), width)
+	var pz1 := mini(int(ceilf((CENTER.z + half - origin.z) / SPACING)), depth)
+	for py in range(pz0, pz1):
+		for px in range(px0, px1):
 			var x := origin.x + px * SPACING
 			var z := origin.z + py * SPACING
 			var sample := _sample(x, z)
 			heights.set_pixel(px, py, Color(sample.x, 0, 0))
 			colors.set_pixel(px, py, _color(sample.x, sample.y, x, z))
-	terrain.data.import_images([heights, null, colors], origin, 0.0, 1.0)
+			if sample.x > ABYSS_CUT:
+				control.set_pixel(px, py, Color(0, 0, 0))
+	terrain.data.import_images([heights, control, colors], origin, 0.0, 1.0)
 
 
 ## Высота тропы на угле спирали theta: пропорциональна пройденному пути, поэтому уклон везде одинаковый.
