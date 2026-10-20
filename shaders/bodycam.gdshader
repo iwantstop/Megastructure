@@ -7,16 +7,16 @@ shader_type canvas_item;
 //    над облаками — золото), но яркие насыщенные пятна (неон, огни) сохраняют свой цвет — акценты.
 // 3. Нагрудная камера: широкоугольное искажение по краям, цветовые разводы, виньетка, зерно.
 
-uniform sampler2D screen : hint_screen_texture, filter_linear_mipmap;
+uniform sampler2D screen : hint_screen_texture, filter_linear;  // без мипмапов — их пересчёт каждый кадр стоит FPS
 uniform float distortion = 0.14;
 uniform float aberration = 0.006;
 uniform float vignette = 0.5;
 uniform float grain = 0.055;
 uniform float saturation = 0.88;
 
-uniform float paint = 1.0;                  // 0 — обычная картинка, 1 — живопись
-uniform int paint_radius : hint_range(1, 6) = 3;
-uniform float paint_scale = 2.0;            // шаг выборки в пикселях: мазок крупнее при той же цене
+uniform float paint = 0.8;                  // 0 — обычная картинка, 1 — только мазки; 0.8 — мазки, сквозь которые видны детали
+uniform int paint_radius : hint_range(1, 6) = 2;
+uniform float paint_scale = 1.0;            // шаг выборки в пикселях: 1 — мелкий, детальный мазок
 uniform vec3 grade_tint = vec3(0.55, 0.68, 0.88);
 uniform float grade_amount : hint_range(0.0, 1.0) = 0.6;
 
@@ -40,7 +40,7 @@ vec3 kuwahara(vec2 uv, vec2 px) {
 		float n = 0.0;
 		for (int y = 0; y <= paint_radius; y++) {
 			for (int x = 0; x <= paint_radius; x++) {
-				vec3 c = textureLod(screen, uv + vec2(float(x), float(y)) * dir * px, 1.0).rgb;  // половинное разрешение — мягче, крупнее и дешевле
+				vec3 c = textureLod(screen, uv + vec2(float(x), float(y)) * dir * px, 0.0).rgb;  // полное разрешение — мазки мелкие и не смазанные
 				float l = dot(c, LUMA);
 				sum += c;
 				sum_l += l;
