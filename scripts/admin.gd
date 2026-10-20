@@ -60,6 +60,7 @@ func _ready() -> void:
 	_check(box, "Эффект бодикамеры", func(on: bool) -> void: bodycam.visible = on).button_pressed = true
 	_slider(box, "Бодикамера (линза, зерно, виньетка): 0 — нет, 100 — как задумано", 0, 200, 100, _on_bodycam_strength)
 	_slider(box, "Покачивание при ходьбе: 0 — нет, 100 — как задумано", 0, 200, 100, func(v: float) -> void: player.bob_scale = v / 100.0)
+	_slider(box, "Крен при повороте камеры: 0 — нет, 100 — как задумано", 0, 300, 100, func(v: float) -> void: player.turn_roll_scale = v / 100.0)
 	_check(box, "Живопись (мазки и гамма зоны)", _on_paint).button_pressed = true
 	_check(box, "Глобальное освещение (тяжёлое)", func(on: bool) -> void: env.sdfgi_enabled = on).button_pressed = true
 	_slider(box, "Скорость полёта", 5, 200, player.fly_speed, func(v: float) -> void: player.fly_speed = v)

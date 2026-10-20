@@ -27,6 +27,7 @@ var locked := false   # во вступлении: осматриваться м
 var lying := 0.0      # 1 — лежит на спине и смотрит в небо, 0 — стоит
 var kneeling := 0.0   # 1 — стоит на коленях (финал на вершине)
 var fall_shake := 0.0  # тряска от встречного ветра при падении (вступление)
+var turn_roll_scale := 1.0  # крен при повороте камеры (админ-панель): 1 — как задумано, 0 — без крена
 var bob_scale := 1.0   # покачивание при ходьбе (админ-панель): 1 — как задумано, 0 — нет
 var panic := 0.0       # паника в падении: крупная дрожь, кувырок по крену, шире обзор (вступление)
 var panic_look := Vector2.ZERO  # резкие рывки головы в панике: x — вбок, y — вверх-вниз, рад
@@ -205,7 +206,8 @@ func _process(delta: float) -> void:
 	var amp := (minf(walk_amount, 1.0) + maxf(walk_amount - 1.0, 0.0) * 0.2) * bob_scale
 
 	# Лёгкий наклон в сторону поворота: чем быстрее поворачиваешь, тем сильнее, но не больше 2°.
-	var tilt_target := clampf(-yaw_gap * 0.25 * ROLL_STRENGTH, -0.035 * ROLL_STRENGTH, 0.035 * ROLL_STRENGTH)
+	var roll := ROLL_STRENGTH * turn_roll_scale
+	var tilt_target := clampf(-yaw_gap * 0.25 * roll, -0.035 * roll, 0.035 * roll)
 	tilt = lerpf(tilt, tilt_target, 4.0 * delta)
 	strafe_tilt = lerpf(strafe_tilt, -move_input.x * 0.015 * ROLL_STRENGTH, 4.0 * delta)
 	land_dip = lerpf(land_dip, 0.0, 7.0 * delta)

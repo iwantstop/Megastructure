@@ -9,6 +9,7 @@ var admin: Node
 var player: CharacterBody3D
 var t := 0.0
 var found := false
+var max_roll := 0.0
 var step := 0
 
 
@@ -49,5 +50,19 @@ func _process(delta: float) -> bool:
 		step = 4
 	if step == 4 and t > 14.0:
 		print("BODYCAM bob 0%%: walking speed=%.1f, camera offset=%.4f" % [player.velocity.length(), player.camera.position.length()])
+		step = 5
+	# Крен при повороте: быстрый поворот мышью, наибольший крен при 0%, 100% и 300%.
+	if step >= 5 and step <= 7:
+		var scales := [0.0, 1.0, 3.0]
+		var phase := t - 14.0 - (step - 5) * 1.5
+		player.turn_roll_scale = scales[step - 5]
+		if phase < 0.6:
+			player.target_yaw += 3.0 * delta
+			max_roll = maxf(max_roll, absf(player.tilt))
+		elif phase > 1.5:
+			print("BODYCAM turn roll %d%%: max roll=%.2f deg" % [int(scales[step - 5] * 100), rad_to_deg(max_roll)])
+			max_roll = 0.0
+			step += 1
+	if step == 8:
 		return true
 	return false
