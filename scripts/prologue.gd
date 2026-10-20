@@ -2,8 +2,8 @@ extends CanvasLayer
 
 ## Экран загрузки с прологом. Чёрный экран, название «Где мой ангел?» — под ним строится мир; потом
 ## абзацы предыстории по одному медленно проявляются и тают. Каждый держится столько, сколько нужно,
-## чтобы прочитать; пробел / Enter / клик — следующий абзац. Пока идёт пролог, игра на паузе,
-## а последняя фраза — «…и бросился вниз.» — уводит прямо в падение.
+## чтобы прочитать. Последний абзац — «…и бросился вниз.» — остаётся, пока игрок не нажмёт пробел;
+## пробел в любой момент пропускает историю. Пока идёт пролог, игра на паузе.
 
 signal title_shown
 signal finished
@@ -77,7 +77,7 @@ func _label(size: int, color: Color) -> Label:
 ## Мир построен — название тает, начинаются абзацы.
 func play_text() -> void:
 	playing = true
-	hint.text = "пробел — дальше"
+	hint.text = "пробел — пропустить"
 	tween = create_tween()
 	tween.tween_property(title, "modulate:a", 0.0, FADE).set_trans(Tween.TRANS_SINE)
 	tween.tween_callback(_next)
@@ -87,21 +87,21 @@ func _process(delta: float) -> void:
 	if not playing or index < 0:
 		return
 	shown_for += delta
-	if shown_for >= hold:
+	# Абзацы сменяются сами, но последний остаётся на экране — игра начинается только по пробелу.
+	if shown_for >= hold and index < PARAGRAPHS.size() - 1:
 		_next()
 
 
+## Пробел — пропустить историю (или начать игру после последнего абзаца).
 func _unhandled_input(event: InputEvent) -> void:
-	if not playing or index < 0:
+	if not playing:
 		return
-	var pressed: bool = (event is InputEventKey and event.pressed and not event.echo) \
-		or (event is InputEventMouseButton and event.pressed)
-	if pressed and shown_for > 0.6:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
 		get_viewport().set_input_as_handled()
-		_next()
+		_finish()
 
 
-## Следующий абзац: прежний тает, новый проявляется; после последнего — экран уходит в падение.
+## Следующий абзац: прежний тает, новый проявляется.
 func _next() -> void:
 	shown_for = 0.0
 	hold = 1e9  # пока идёт смена — не торопить
@@ -111,16 +111,27 @@ func _next() -> void:
 	if index >= 0:
 		tween.tween_property(text, "modulate:a", 0.0, FADE * 0.7).set_trans(Tween.TRANS_SINE)
 	index += 1
-	if index >= PARAGRAPHS.size():
-		playing = false
-		tween.tween_property(hint, "modulate:a", 0.0, 0.4)
-		tween.tween_callback(func() -> void: finished.emit())
-		tween.tween_property(background, "modulate:a", 0.0, 1.6).set_trans(Tween.TRANS_SINE)
-		tween.tween_callback(queue_free)
-		return
-	var paragraph: String = PARAGRAPHS[index]
+	if index == PARAGRAPHS.size() - 1:
+		tween.parallel().tween_property(hint, "modulate:a", 0.0, FADE * 0.7)
+		tween.tween_callback(func() -> void: hint.text = "пробел — начать")
+		tween.tween_property(hint, "modulate:a", 1.0, FADE)
+	var paragraph: String = PARAGRAPHS[min(index, PARAGRAPHS.size() - 1)]
 	tween.tween_callback(func() -> void: text.text = paragraph)
 	tween.tween_property(text, "modulate:a", 1.0, FADE).set_trans(Tween.TRANS_SINE)
 	tween.tween_callback(func() -> void:
 		shown_for = 0.0
 		hold = 3.0 + paragraph.length() / CHARS_PER_SECOND)
+
+
+## Конец пролога: текст и подсказка тают, игра снимается с паузы, чёрный экран уходит в падение.
+func _finish() -> void:
+	playing = false
+	if tween:
+		tween.kill()
+	tween = create_tween()
+	tween.tween_property(text, "modulate:a", 0.0, FADE * 0.7).set_trans(Tween.TRANS_SINE)
+	tween.parallel().tween_property(title, "modulate:a", 0.0, FADE * 0.7)
+	tween.parallel().tween_property(hint, "modulate:a", 0.0, 0.4)
+	tween.tween_callback(func() -> void: finished.emit())
+	tween.tween_property(background, "modulate:a", 0.0, 1.6).set_trans(Tween.TRANS_SINE)
+	tween.tween_callback(queue_free)
