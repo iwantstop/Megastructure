@@ -121,6 +121,7 @@ func say(line: String, hold := SUB_HOLD, fade_in := SUB_FADE_IN, fade_out := SUB
 	if sub_tween:
 		sub_tween.kill()
 	subtitle.text = line
+	subtitle.visible_characters = -1
 	subtitle.modulate.a = 0.0
 	sub_tween = create_tween()
 	sub_tween.tween_property(subtitle, "modulate:a", 1.0, fade_in).set_trans(Tween.TRANS_SINE)
