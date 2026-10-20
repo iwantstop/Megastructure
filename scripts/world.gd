@@ -109,11 +109,16 @@ func _ready() -> void:
 	finale.setup(player, ambient)
 	add_child(finale)
 
-	var admin = preload("res://scripts/admin.gd").new()
-	admin.setup({"player": player, "dream": dream, "presence": presence, "env": env, "bodycam": bodycam,
-		"journey": journey, "intro": intro, "finale": finale})
 	var args := OS.get_cmdline_user_args()
 	var scripted := "--demo" in args or "--bench" in args or "--map" in args
+	var seizure = preload("res://scripts/seizure.gd").new()
+	seizure.setup(player, bodycam.get_child(0).material)
+	if not scripted:
+		add_child(seizure)  # в демо и бенчмарке героя переносят скриптом — припадки помешали бы
+
+	var admin = preload("res://scripts/admin.gd").new()
+	admin.setup({"player": player, "dream": dream, "presence": presence, "env": env, "bodycam": bodycam,
+		"journey": journey, "intro": intro, "finale": finale, "seizure": seizure})
 	if not scripted:
 		add_child(admin)  # в демо и бенчмарке панель не нужна: случайное F1 не испортит запись
 	if not ("--bench" in args or "--map" in args):

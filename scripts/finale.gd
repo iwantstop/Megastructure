@@ -1,10 +1,12 @@
 extends CanvasLayer
 
 ## Финал на вершине. Герой падает на колени, лицом к солнцу. Ангела нет — его не было никогда.
-## Всё без слов: он долго смотрит на солнце, ложится, закрывает глаза; мир медленно
-## растворяется в тёплом свете, потом в темноте. Конец.
+## Он долго смотрит на солнце — внизу на миг проступает «Это... Всё я», — ложится, закрывает глаза;
+## мир медленно растворяется в тёплом свете, потом в темноте. Конец.
 
-const SILENCE := 10.0  # сколько он молча смотрит на солнце
+const SILENCE := 10.0  # сколько он смотрит на солнце, стоя на коленях
+const REALIZATION := "Это... Всё я"
+const REALIZATION_HOLD := 4.0  # столько субтитр полностью на экране
 
 var player: CharacterBody3D
 var ambient: AudioStreamPlayer
@@ -49,7 +51,9 @@ func start() -> void:
 	var tween := create_tween()
 	tween.tween_interval(1.0)
 	tween.tween_property(player, "kneeling", 1.0, 3.0).set_trans(Tween.TRANS_SINE)  # падает на колени
-	tween.tween_interval(SILENCE)
+	tween.tween_interval(1.5)
+	tween.tween_callback(_realize)
+	tween.tween_interval(SILENCE - 1.5)
 	# Ложится на спину, смотрит в небо и закрывает глаза.
 	tween.tween_property(player, "kneeling", 0.0, 3.0)
 	tween.parallel().tween_property(player, "lying", 1.0, 4.0).set_trans(Tween.TRANS_SINE)
@@ -57,3 +61,10 @@ func start() -> void:
 	tween.tween_property(veil, "color:a", 1.0, 8.0)
 	tween.parallel().tween_property(ambient, "volume_db", -60.0, 10.0)
 	tween.tween_property(veil, "color", Color(0, 0, 0, 1), 4.0)
+
+
+## На коленях, лицом к солнцу, — он понимает: ангела не было. Субтитр держится 4 секунды.
+func _realize() -> void:
+	var hud := get_tree().get_first_node_in_group("hud")
+	if hud:
+		hud.say(REALIZATION, REALIZATION_HOLD, 1.0, 1.5)
