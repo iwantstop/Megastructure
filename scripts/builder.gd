@@ -17,6 +17,7 @@ const DETAIL_RANGE := 200.0               # дальше этого мелочи
 const CELL_DETAIL := 96.0                 # мелочи режем мелко везде: движок меряет дальность до ЦЕНТРА куска,
                                           # и в 640-метровом куске перила пропадали прямо под ногами
 const DETAIL_THIN := 0.6                  # деталь «мелкая», если её средний размер меньше
+const DETAIL_PIECE := 48.0                # длинные мелочи режутся на отрезки не длиннее этого, м
 const OCCLUDER_MIN := 8.0                 # окклюдерами становятся объёмы крупнее этого
 
 var body := StaticBody3D.new()
@@ -57,9 +58,33 @@ func rod_between(a: Vector3, c: Vector3, radius: float, mat: Material) -> void:
 
 
 func box(center: Vector3, size: Vector3, mat: Material, basis := Basis.IDENTITY, collide := true) -> void:
-	_append(_unit_box, Transform3D(basis * Basis.from_scale(size), center), mat)
+	_append_box(center, size, mat, basis)
 	if collide:
 		collider_box(center, size, basis)
+
+
+## Длинная тонкая деталь (поручень, провод) режется на отрезки не длиннее DETAIL_PIECE:
+## мелочи прячутся по расстоянию до центра куска, и поручень на весь двухкилометровый мост
+## исчезал целиком, стоило отойти от его середины.
+func _append_box(center: Vector3, size: Vector3, mat: Material, basis: Basis) -> void:
+	var dims := [size.x, size.y, size.z]
+	var longest := 0
+	for i in 3:
+		if dims[i] > dims[longest]:
+			longest = i
+	var sorted := dims.duplicate()
+	sorted.sort()
+	var thin: bool = sorted[1] < DETAIL_THIN
+	var pieces := ceili(dims[longest] / DETAIL_PIECE) if thin else 1
+	if pieces <= 1:
+		_append(_unit_box, Transform3D(basis * Basis.from_scale(size), center), mat)
+		return
+	var axis := basis.orthonormalized()[longest]
+	var piece_size := size
+	piece_size[longest] = dims[longest] / pieces
+	for k in pieces:
+		var offset := (k + 0.5 - pieces / 2.0) * piece_size[longest]
+		_append(_unit_box, Transform3D(basis * Basis.from_scale(piece_size), center + axis * offset), mat)
 
 
 func cylinder(center: Vector3, radius: float, height: float, mat: Material, basis := Basis.IDENTITY, collide := true) -> void:
