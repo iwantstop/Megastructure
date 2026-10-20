@@ -1,11 +1,11 @@
 extends CanvasLayer
 
 ## Экранный текст поверх игры:
-## - задание в левом верхнем углу — полупрозрачный текст «Уходи отсюда», без плашки и обводки. Виден, когда герой
+## - задание в левом верхнем углу — полупрозрачный текст «Я должен уйти», без плашки и обводки. Виден, когда герой
 ##   встаёт после падения, потом тает; снова появляется, пока зажат Tab;
 ## - субтитры внизу по центру — медленно проявляются и медленно тают (их зовёт ангел).
 
-const TASK := "Уходи отсюда"
+const TASK := "Я должен уйти"
 const TASK_AT_START := 7.0     # сколько задание висит после того, как герой встал, с
 const TASK_SHOW := 0.45       # Tab: плавное появление, с
 const TASK_HIDE := 0.6        # Tab отпущен: плавное исчезание, с
@@ -94,12 +94,13 @@ func _task_step(tween: Tween, appear: bool, time: float) -> void:
 	tween.tween_property(task, "position:x", x, time)
 
 
-## Субтитр внизу экрана: медленно проявляется, держится и медленно тает.
-func say(line: String) -> void:
+## Субтитр внизу экрана: медленно проявляется, держится hold секунд и медленно тает.
+func say(line: String, hold := SUB_HOLD, fade_in := SUB_FADE_IN, fade_out := SUB_FADE_OUT) -> void:
 	if sub_tween:
 		sub_tween.kill()
 	subtitle.text = line
+	subtitle.modulate.a = 0.0
 	sub_tween = create_tween()
-	sub_tween.tween_property(subtitle, "modulate:a", 1.0, SUB_FADE_IN).set_trans(Tween.TRANS_SINE)
-	sub_tween.tween_interval(SUB_HOLD)
-	sub_tween.tween_property(subtitle, "modulate:a", 0.0, SUB_FADE_OUT).set_trans(Tween.TRANS_SINE)
+	sub_tween.tween_property(subtitle, "modulate:a", 1.0, fade_in).set_trans(Tween.TRANS_SINE)
+	sub_tween.tween_interval(hold)
+	sub_tween.tween_property(subtitle, "modulate:a", 0.0, fade_out).set_trans(Tween.TRANS_SINE)

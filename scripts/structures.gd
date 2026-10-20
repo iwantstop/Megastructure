@@ -27,7 +27,8 @@ var streets: Array[Vector4] = []  # оси улиц: (x0, z0, x1, z1)
 var plazas: Array[Vector2] = []
 var ads: Array[Dictionary] = []   # места под горящие билборды: {xform, size}
 var signs: Array[Dictionary] = [] # вертикальные неоновые вывески поперёк улицы: {xform, size}
-var crossings: Array[Vector2] = []  # перекрёстки — над ними висят голограммы
+var crossings: Array[Vector2] = []  # перекрёстки
+var open_hubs: Array[Vector2] = []  # хабы L1 без шахты лифта — на них стоят проекторы голограмм
 var city_towers: Array[Dictionary] = []  # небоскрёбы — между ними воздушные мосты
 
 ## Самая высокая башня — с неё прыгнул герой. Он лежит у её подножия.
@@ -374,6 +375,8 @@ func _levels() -> void:
 		_deck_ring(blk, hubs)
 	for key in hubs:
 		_hub(hubs[key], towers_at.has(key))
+		if not towers_at.has(key):
+			open_hubs.append(hubs[key])
 	for key in towers_at:
 		_access_tower(towers_at[key])
 
@@ -700,7 +703,7 @@ func _skybridges() -> void:
 			per_tower[c] = per_tower.get(c, 0) + 1
 			var mid := Vector3((pa.x + pb.x) / 2.0, y, (pa.z + pb.z) / 2.0)
 			var basis := Basis(Vector3.UP, atan2(pb.x - pa.x, pb.z - pa.z))
-			b.box(mid, Vector3(5, 3.5, dist), _facade_mat(), basis, false)
+			b.box(mid, Vector3(5, 3.5, dist), _facade_mat(), basis)  # твёрдый: летающие машины его облетают
 			b.box(mid + Vector3.DOWN * 1.8, Vector3(0.3, 0.1, dist), _pick(m.neon), basis, false)
 			made += 1
 
@@ -730,9 +733,10 @@ func _tallest_tower() -> void:
 		b.box_local(t, Vector3(0, ledge, 0), Vector3(w + 3, 1.5, w + 3), m.concrete_dark, false)
 		ledge += 40.0
 	b.box_local(t, Vector3(0, h + 40, 0), Vector3(2, 80, 2), m.metal, false)
-	# Огромный горящий экран на фасаде, обращённом к городу.
-	_add_ad(t, Vector3(0, 70, w / 2.0 + 0.45), Vector2(30, 40))
-	_add_ad(t, Vector3(0, 260, w / 2.0 + 0.45), Vector2(34, 22))
+	# Огромные горящие экраны на фасаде, обращённом к городу, — между карнизами (30, 70, 110… м),
+	# чтобы карниз не перечёркивал надпись.
+	_add_ad(t, Vector3(0, 90, w / 2.0 + 0.45), Vector2(30, 34))
+	_add_ad(t, Vector3(0, 250, w / 2.0 + 0.45), Vector2(34, 30))
 	towers.append({"pos": TALLEST_TOWER, "height": h, "radius": w * 0.7})
 
 
@@ -1336,12 +1340,12 @@ func _bridges_and_pipes() -> void:
 			var mid := (p1 + p2) / 2.0
 			if bridges < 20 and rng.randf() < 0.25:
 				var y := top * rng.randf_range(0.4, 0.8)
-				b.box(mid + Vector3(0, y, 0), Vector3(12, 6, dist), m.concrete_dark, Basis(Vector3.UP, atan2(dir.x, dir.z)), false)
+				b.box(mid + Vector3(0, y, 0), Vector3(12, 6, dist), m.concrete_dark, Basis(Vector3.UP, atan2(dir.x, dir.z)))  # твёрдые — машины облетают
 				bridges += 1
 			elif pipes < 25 and rng.randf() < 0.2:
 				var y := rng.randf_range(30, maxf(top * 0.5, 40))
 				var basis := Basis(Quaternion(Vector3.UP, dir.normalized()))
-				b.cylinder(mid + Vector3(0, y, 0), rng.randf_range(2, 5), dist, m.metal, basis, false)
+				b.cylinder(mid + Vector3(0, y, 0), rng.randf_range(2, 5), dist, m.metal, basis)
 				pipes += 1
 			else:
 				continue

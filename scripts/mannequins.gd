@@ -127,6 +127,10 @@ func _figure(pos: Vector3, yaw: float, pose: Dictionary) -> void:
 	})
 	var root := Transform3D(Basis(Vector3.UP, yaw), pos)
 	if pose.get("sit", false):
-		b.box(root * Vector3(0, 0.23, 0.12), Vector3(0.6, 0.46, 0.55), seat_mat, root.basis)
+		# Сиденье по замеру позы Sitting_Idle: таз на 0,54 м и в 0,33 м позади центра фигуры,
+		# снизу у таза ~0,42 м. Плита чуть ниже — 0,40 м, от колен назад за таз, на двух ножках.
+		b.box(root * Vector3(0, 0.38, 0.24), Vector3(0.62, 0.04, 0.56), seat_mat, root.basis)
+		for side in [-0.26, 0.26]:
+			b.box(root * Vector3(side, 0.18, 0.24), Vector3(0.06, 0.36, 0.5), seat_mat, root.basis, false)
 	else:
 		b.collider_box(root * Vector3(0, 0.9, 0), Vector3(0.5, 1.8, 0.4), root.basis)
