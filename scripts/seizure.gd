@@ -104,6 +104,9 @@ func _start(index: int) -> void:
 	jerk = 0.0
 	moved = false
 	player.locked = true
+	var smoke := get_tree().get_first_node_in_group("smoke")
+	if smoke:
+		smoke.seizure_hit()  # сигарета гаснет, руки потом дрожат
 	noise_player.play()
 	noise_playback = noise_player.get_stream_playback()
 

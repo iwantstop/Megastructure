@@ -19,15 +19,25 @@ const REGION := 1024         # точек карты высот в регион�
 const ABYSS_CUT := -480.0    # ниже этой высоты склон обрывается дырой — дна у бездны нет
 const COLLISION_FLOOR := -900.0  # в коллизии на месте дыр — просто глубоко (игрок вернётся на тропу раньше)
 
+const TERRACE_STEP := 9.0    # высота одного уступа на склонах, м
+const CAVE_AT := 0.3          # пещера — на этой доле подъёма (под облаками, ~310 м)
+const CAVE_DEPTH := 36.0      # глубина выемки в стене, м
+const CAVE_HALF_W := 9.0      # половина ширины выемки, м
+
 const THETA := LAPS * TAU
 const C := (R_BASE - R_TOP) / THETA  # насколько тропа приближается к центру на радиан
 
 var terrain: Terrain3D
+var cave_inverse: Transform3D  # пещера — посчитана один раз, а не на каждый пиксель карты
+var cave_floor := 0.0
 var noise := FastNoiseLite.new()
 
 
 func _ready() -> void:
 	noise.seed = 4242
+	var cave := cave_frame()
+	cave_inverse = cave.affine_inverse()
+	cave_floor = cave.origin.y
 	noise.frequency = 0.012
 	noise.fractal_octaves = 4
 
@@ -139,9 +149,16 @@ func _sample(x: float, z: float) -> Vector2:
 		var h0 := path_height(theta_in)
 		if r - r_in <= PATH_W / 2.0:
 			return Vector2(h0, 1.0)
-		return Vector2(maxf(h0 - (r - r_in - PATH_W / 2.0) * 1.8 + rock * 12.0, -500.0), 0.0)
+		var drop := r - r_in - PATH_W / 2.0
+		var cliff := maxf(h0 - drop * 1.8 + rock * 12.0, -500.0)
+		return Vector2(lerpf(cliff, _terrace(cliff, rock), smoothstep(3.0, 15.0, drop)), 0.0)
 
 	var h_out := path_height(theta_out)
+	# Пещера: выемка в стене над тропой с ровным полом — свод и стены построит mountain_features.gd.
+	var local := cave_inverse * Vector3(x, cave_floor, z)
+	var depth := -local.z
+	if depth > -1.0 and depth < CAVE_DEPTH and absf(local.x) < CAVE_HALF_W:
+		return Vector2(lerpf(h_out, cave_floor, smoothstep(0.0, 4.0, depth)), 1.0)
 	if theta_in >= THETA:
 		# Внутри последнего витка — вершинная площадка.
 		r_in = maxf(r_in, R_TOP)
@@ -153,10 +170,41 @@ func _sample(x: float, z: float) -> Vector2:
 		return Vector2(h_out, 1.0)
 	if r - r_in <= PATH_W / 2.0:
 		return Vector2(h_in, 1.0)
-	# Скальная стена между витками: от нижней тропы к верхней, с выступами.
+	# Скальная стена между витками: от нижней тропы к верхней, с выступами и уступами-террасами.
 	var t := clampf((r_out - PATH_W / 2.0 - r) / maxf(r_out - r_in - PATH_W, 1.0), 0.0, 1.0)
-	var wall := lerpf(h_out, h_in, smoothstep(0.0, 1.0, t))
-	return Vector2(wall + rock * 25.0 * sin(t * PI), 0.0)
+	var wall := lerpf(h_out, h_in, smoothstep(0.0, 1.0, t)) + rock * 25.0 * sin(t * PI)
+	# У самих троп уступов нет — иначе у подножия стены получится канава или ступенька.
+	var away_from_paths := smoothstep(0.05, 0.25, t) * (1.0 - smoothstep(0.85, 0.97, t))
+	return Vector2(lerpf(wall, _terrace(wall, rock), away_from_paths), 0.0)
+
+
+## Уступы: склон превращается в ступени — широкие почти ровные полки и крутые сбросы между ними.
+## Шум сдвигает уровни, чтобы уступы не шли идеально ровными кольцами.
+func _terrace(h: float, rock: float) -> float:
+	var s := (h + rock * 4.0) / TERRACE_STEP
+	var stepped := (floorf(s) + smoothstep(0.55, 1.0, fposmod(s, 1.0))) * TERRACE_STEP - rock * 4.0
+	return lerpf(h, stepped, 0.85)
+
+
+## Пещера: начало — у внутреннего края тропы на доле подъёма CAVE_AT, -Z — вглубь горы, Y — уровень пола.
+static func cave_frame() -> Transform3D:
+	var p := path_point(CAVE_AT).origin
+	var inward := Vector3(CENTER.x - p.x, 0, CENTER.z - p.z).normalized()
+	var origin := p + inward * (PATH_W / 2.0)
+	return Transform3D(Basis.looking_at(inward, Vector3.UP), origin)
+
+
+## Доля подъёма, на которой тропа выходит на заданную высоту.
+static func fraction_at_height(h: float) -> float:
+	var lo := 0.0
+	var hi := 1.0
+	for i in 30:
+		var mid := (lo + hi) / 2.0
+		if path_point(mid).origin.y < h:
+			lo = mid
+		else:
+			hi = mid
+	return (lo + hi) / 2.0
 
 
 ## Каменная текстура (без неё Terrain3D рисует отладочную шахматную клетку):

@@ -9,11 +9,15 @@ extends Node3D
 ## 5. Держать T — затяжка: сигарета плавно подносится ближе, кончик разгорается, бумага тлеет,
 ##    от кончика вьётся тонкая струйка дыма. Отпустить — сигарета плавно возвращается, выдох дымом.
 ## 6. Догорела до фильтра — окурок улетает вниз. Следующий T — новая сигарета (пока есть в пачке).
+## Руки в перчатках: правая держит сигарету между пальцами, левая — пачку, потом зажигалку; рукава уходят
+## за край кадра. Припадок (seizure.gd) гасит сигарету — T, чтобы прикурить снова, — и после него руки
+## дрожат, дрожь медленно стихает; пока дрожат, зажигалка загорается хуже.
 
-enum State { IDLE, TAKING, WAIT_STRIKE, LIGHTING, SMOKING, BUSY }
+enum State { IDLE, TAKING, WAIT_STRIKE, LIGHTING, SMOKING, UNLIT, BUSY }
 
 const PACK_SIZE := 10
 const STRIKE_CHANCE := 0.5
+const TREMOR_TIME := 120.0        # за столько секунд дрожь после припадка стихает
 const FILTER_LEN := 0.025
 const PAPER_LEN := 0.058
 const PAPER_MIN := 0.006           # догорело — дальше только фильтр
@@ -60,6 +64,10 @@ var flame_light: OmniLight3D
 var spark: MeshInstance3D
 var lighter_mats: Array[StandardMaterial3D] = []
 var flame_on := false
+var arm_r: Arm                     # правая — держит сигарету
+var arm_l: Arm                     # левая — пачку, потом зажигалку
+var right_holds := false
+var tremor := 0.0                  # 0..1 — дрожь рук после припадка
 
 var snd: Dictionary = {}
 var crackle: AudioStreamPlayer
@@ -75,6 +83,8 @@ func _ready() -> void:
 	_build_pack()
 	_build_cigarette()
 	_build_lighter()
+	arm_r = _build_arm(true)
+	arm_l = _build_arm(false)
 	_build_smoke()
 	_build_sounds()
 	pack.visible = false
@@ -95,10 +105,20 @@ func _unhandled_input(event: InputEvent) -> void:
 				_take_cigarette()
 			State.WAIT_STRIKE:
 				_strike()
+			State.UNLIT:
+				state = State.BUSY
+				_lighter_out()  # погасла — прикурить снова
 	get_viewport().set_input_as_handled()
 
 
 func _process(delta: float) -> void:
+	_hands(delta)
+	# Дрожь после припадка: весь «набор в руках» мелко трясётся и медленно успокаивается.
+	tremor = move_toward(tremor, 0.0, delta / TREMOR_TIME)
+	var ms := Time.get_ticks_msec() * 0.001
+	var shake := tremor * tremor
+	position = Vector3(sin(ms * 31.0) * sin(ms * 7.3), sin(ms * 27.0 + 1.0) * sin(ms * 5.1), 0.0) * 0.006 * shake
+	rotation.z = sin(ms * 23.0) * sin(ms * 3.7) * 0.03 * shake
 	if state == State.SMOKING:
 		var holding: bool = Input.is_physical_key_pressed(KEY_T) and not player.locked
 		if holding and not puffing:
@@ -143,6 +163,7 @@ func put_away() -> void:
 		pack.visible = false
 		cig.visible = false
 		lighter.visible = false
+		right_holds = false
 		stream.emitting = false
 		state = State.IDLE)
 
@@ -204,7 +225,8 @@ func _pull_from_pack() -> void:
 	tween.chain().tween_property(cig, "position", REST_POS, 0.7).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	tween.tween_property(cig, "rotation", REST_ROT, 0.7).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	tween.tween_property(pack_lid, "rotation:x", 0.0, 0.35).set_delay(0.3)
-	tween.chain().tween_callback(_play.bind("pack_close"))
+	tween.chain().tween_callback(func() -> void: right_holds = true)  # сигарета в руке — рука поднимается снизу
+	tween.tween_callback(_play.bind("pack_close"))
 	tween.tween_property(pack, "position", PACK_POS + HIDDEN_DROP, 0.6).set_trans(Tween.TRANS_SINE)
 	tween.chain().tween_callback(func() -> void: pack.visible = false)
 	tween.chain().tween_callback(_lighter_out)
@@ -232,9 +254,12 @@ func _strike() -> void:
 	_play("strike")
 	spark.visible = true
 	spark.scale = Vector3.ONE * rng.randf_range(0.7, 1.3)
-	var lit := rng.randf() < STRIKE_CHANCE
+	var lit := rng.randf() < STRIKE_CHANCE * (1.0 - 0.5 * tremor)  # дрожат руки — загорается хуже
 	var tween := create_tween()
-	tween.tween_property(lighter, "rotation:x", 0.22, 0.05)
+	tween.tween_method(func(v: float) -> void: thumb_flick = v, 0.0, 1.0, 0.05)
+	tween.parallel().tween_property(lighter, "rotation:x", 0.22, 0.05)
+	tween.tween_method(func(v: float) -> void: thumb_flick = v, 1.0, 0.0, 0.12)
+	tween.parallel()
 	tween.tween_property(lighter, "rotation:x", 0.15, 0.1)
 	tween.tween_callback(func() -> void: spark.visible = false)
 	if not lit:
@@ -295,11 +320,28 @@ func _throw_away() -> void:
 	crackle.stop()
 	stream.emitting = false
 	var tween := create_tween().set_parallel()
+	right_holds = false  # пальцы разжались — окурок летит, рука опускается
 	tween.tween_property(cig, "position", cig.position + Vector3(0.08, -0.3, -0.1), 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tween.tween_property(cig, "rotation", cig.rotation + Vector3(2.5, 0.8, 0), 0.6)
 	tween.chain().tween_callback(func() -> void:
 		cig.visible = false
 		state = State.IDLE)
+
+
+## Припадок: сигарета гаснет (остаётся в руке), руки начинают дрожать.
+func seizure_hit() -> void:
+	tremor = 1.0
+	if state == State.SMOKING:
+		puffing = false
+		puff_amount = 0.0
+		cig.position = REST_POS
+		cig.rotation = REST_ROT
+		crackle.stop()
+		stream.emitting = false
+		glow = 0.0
+		ember.visible = false
+		ember_light.visible = false
+		state = State.UNLIT
 
 
 func _set_paper(length: float) -> void:
@@ -315,6 +357,139 @@ func _set_paper(length: float) -> void:
 func _lighter_alpha(a: float) -> void:
 	for mat in lighter_mats:
 		mat.albedo_color.a = a
+
+
+# --- Руки --------------------------------------------------------------------------
+# Руки — из модели манекена (CC0, по 3 кости на палец): каждая рука — отдельный экземпляр модели,
+# у которого шейдер fp_arm.gdshader оставляет только эту руку (перчатка + рукав). Пальцы выставляются
+# в позу под предмет, а сам экземпляр ставится так, чтобы предмет оказался в нужном месте кисти.
+
+const ARM_MODEL := preload("res://assets/characters/animation_library/AnimationLibrary_Godot_Standard.glb")
+const ARM_SHADER := preload("res://shaders/fp_arm.gdshader")
+const HAND_AWAY := Vector3(0, -0.35, 0.05)        # куда рука уходит из кадра
+const FINGERS := ["f_index", "f_middle", "f_ring", "f_pinky"]
+# Сгиб суставов (рад, 01/02/03) для каждого хвата: указательный, средний, безымянный, мизинец, большой.
+const POSE_CIG := [[0.15, 0.2, 0.1], [0.12, 0.2, 0.1], [1.2, 1.4, 0.9], [1.3, 1.4, 0.9], [0.35, 0.5, 0.4]]
+const POSE_PACK := [[0.9, 0.9, 0.6], [0.95, 0.9, 0.6], [1.0, 0.9, 0.6], [1.05, 0.9, 0.6], [0.15, 0.25, 0.2]]
+const POSE_LIGHTER := [[1.25, 1.3, 0.9], [1.3, 1.35, 0.9], [1.35, 1.35, 0.9], [1.4, 1.35, 0.9], [0.0, 0.15, 0.1]]
+
+var thumb_flick := 0.0             # 0..1 — большой палец чиркает колёсико
+
+
+class Arm:
+	var root: Node3D
+	var skeleton: Skeleton3D
+	var side: String               # "R" / "L"
+	var hand_rest: Transform3D     # кость кисти в пространстве модели (исходная поза)
+	var finger_dir: Vector3        # вдоль пальцев, в пространстве кисти
+	var back_dir: Vector3          # тыльная сторона ладони, в пространстве кисти
+	var pose: Array = []
+	var flick := 0.0
+
+
+## Рука: экземпляр манекена, видна только она (перчатка и рукав до плеча).
+func _build_arm(right: bool) -> Arm:
+	var arm := Arm.new()
+	arm.side = "R" if right else "L"
+	arm.root = Node3D.new()
+	add_child(arm.root)
+	var body: Node3D = ARM_MODEL.instantiate()
+	arm.root.add_child(body)
+	var mat := ShaderMaterial.new()
+	mat.shader = ARM_SHADER
+	mat.set_shader_parameter("side", 1.0 if right else -1.0)
+	for mesh in body.find_children("*", "MeshInstance3D", true, false):
+		mesh.material_override = mat
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mesh.extra_cull_margin = 2.0
+	var anim: AnimationPlayer = body.find_child("AnimationPlayer", true, false)
+	if anim:
+		anim.stop()
+	arm.skeleton = body.find_child("Skeleton3D", true, false)
+	var hand := arm.skeleton.find_bone("DEF-hand." + arm.side)
+	arm.hand_rest = arm.skeleton.get_bone_global_rest(hand)
+	# В Т-позе пальцы смотрят от тела вдоль X, тыльная сторона — вверх.
+	var outward := Vector3(-1, 0, 0) if right else Vector3(1, 0, 0)
+	arm.finger_dir = (arm.hand_rest.basis.inverse() * outward).normalized()
+	arm.back_dir = (arm.hand_rest.basis.inverse() * Vector3.UP).normalized()
+	arm.root.visible = false
+	return arm
+
+
+## Сгибает пальцы: для каждой кости — поворот вокруг её оси X (к ладони).
+func _set_pose(arm: Arm, pose: Array, flick := 0.0) -> void:
+	if arm.pose == pose and is_equal_approx(arm.flick, flick):
+		return
+	arm.pose = pose
+	arm.flick = flick
+	for f in 5:
+		var base: String = "DEF-thumb" if f == 4 else "DEF-" + FINGERS[f]
+		for j in 3:
+			var bone := arm.skeleton.find_bone("%s.%02d.%s" % [base, j + 1, arm.side])
+			if bone < 0:
+				continue
+			var bend: float = pose[f][j]
+			if f == 4:
+				bend += flick * 0.6
+			if arm.side == "L":
+				bend = -bend  # у левой руки кости зеркальные — сгиб к ладони в другую сторону
+			arm.skeleton.set_bone_pose_rotation(bone, arm.skeleton.get_bone_rest(bone).basis.get_rotation_quaternion() * Quaternion(Vector3.RIGHT, bend))
+
+
+## Где поставить экземпляр модели, чтобы точка кисти grip_point (в пространстве модели) оказалась в target,
+## пальцы смотрели вдоль fingers, а тыльная сторона ладони — в back.
+func _arm_transform(arm: Arm, grip_point: Vector3, target: Vector3, fingers: Vector3, back: Vector3) -> Transform3D:
+	var f := fingers.normalized()
+	var b := (back - f * back.dot(f)).normalized()
+	var want := Basis(f, b, f.cross(b))
+	var have := Basis(arm.finger_dir, arm.back_dir, arm.finger_dir.cross(arm.back_dir))
+	var hand_basis := want * have.inverse()                      # кисть: её оси в пространстве камеры
+	var root_basis := hand_basis * arm.hand_rest.basis.inverse()  # весь экземпляр модели
+	return Transform3D(root_basis, target - root_basis * grip_point)
+
+
+func _bone_pos(arm: Arm, bone_name: String) -> Vector3:
+	return arm.skeleton.get_bone_global_pose(arm.skeleton.find_bone(bone_name + "." + arm.side)).origin
+
+
+## Руки следуют за тем, что держат; когда держать нечего — плавно уходят вниз из кадра.
+func _hands(delta: float) -> void:
+	# Правая: сигарета между указательным и средним (в средних фалангах), пальцы вдоль сигареты.
+	var right_goal = null
+	if right_holds and cig.visible:
+		_set_pose(arm_r, POSE_CIG)
+		var between := (_bone_pos(arm_r, "DEF-f_index.02") + _bone_pos(arm_r, "DEF-f_middle.02")) / 2.0
+		right_goal = _arm_transform(arm_r, between, cig.transform * Vector3(0, 0, -0.012),
+			cig.basis * Vector3(0.08, -0.25, -1.0), cig.basis * Vector3.UP)
+	_follow(arm_r, right_goal, delta)
+	# Левая: пачка или зажигалка в ладони снизу, ладонью вверх, пальцы обхватывают предмет.
+	var left_goal = null
+	var item: Node3D = null
+	if pack.visible:
+		item = pack
+		_set_pose(arm_l, POSE_PACK)
+	elif lighter.visible and lighter_mats[0].albedo_color.a > 0.6:
+		item = lighter
+		_set_pose(arm_l, POSE_LIGHTER, thumb_flick)
+	if item:
+		var palm := _bone_pos(arm_l, "DEF-hand") * 0.4 + _bone_pos(arm_l, "DEF-f_middle.01") * 0.6
+		var bottom := -0.045 if item == pack else -0.042
+		left_goal = _arm_transform(arm_l, palm + arm_l.hand_rest.basis * (-arm_l.back_dir) * 0.02,
+			item.transform * Vector3(0, bottom, 0.004), item.basis * Vector3(0.25, 0.35, -1.0), item.basis * Vector3.DOWN)
+	_follow(arm_l, left_goal, delta)
+
+
+func _follow(arm: Arm, goal: Variant, delta: float) -> void:
+	if goal != null:
+		var g: Transform3D = goal
+		if not arm.root.visible:
+			arm.root.transform = g.translated(HAND_AWAY)  # появляется снизу, а не возникает на месте
+			arm.root.visible = true
+		arm.root.transform = arm.root.transform.interpolate_with(g, clampf(delta * 12.0, 0.0, 1.0))
+	elif arm.root.visible:
+		arm.root.position = arm.root.position.move_toward(arm.root.position + HAND_AWAY, delta * 0.45)
+		if arm.root.position.y < -0.35:
+			arm.root.visible = false
 
 
 # --- Модели ----------------------------------------------------------------------

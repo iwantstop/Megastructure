@@ -25,6 +25,7 @@ var searchlights: Array[SpotLight3D] = []
 var lifts: Array[Node3D] = []
 var _last_mark := 0
 var time := 0.0
+var built := false
 var shared_noise: NoiseTexture2D
 var neon: Array[StandardMaterial3D] = []
 var neon_energy: Array[float] = []
@@ -36,14 +37,61 @@ const AD_TEXTS := [
 	"ДОВЕРЯЙ ТОЛЬКО СЕБЕ", "ПОБЕДИ БЛИЖНЕГО", "ЗАБУДЬ", "КРЕДИТ НА ЖИЗНЬ",
 	"БУДЬ ЛУЧШЕ ДРУГИХ", "ВОЗЬМИ ВСЁ", "НИКТО НЕ УЗНАЕТ", "НАСЛАЖДАЙСЯ",
 ]
+const LOADING_TITLE := "Где мой ангел?"
 const NEON_COLORS := [
 	Color(1.0, 0.1, 0.55), Color(0.1, 0.85, 1.0), Color(1.0, 0.15, 0.1),
 	Color(1.0, 0.55, 0.1), Color(0.6, 0.2, 1.0), Color(0.9, 0.95, 1.0),
 ]
 
 
+## Экран загрузки: мир строится несколько секунд — пусть это время будет чёрным экраном
+## с названием истории, а не заставкой движка. Потом экран тает прямо в падение.
 func _ready() -> void:
+	var loading := _make_loading_screen()
+	# Дать кадру с экраном загрузки отрисоваться: постройка мира займёт главный поток.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_build()
+	built = true
+	var tween := create_tween()
+	tween.tween_property(loading.get_child(0), "modulate:a", 0.0, 1.4).set_trans(Tween.TRANS_SINE)
+	tween.tween_callback(loading.queue_free)
+
+
+func _make_loading_screen() -> CanvasLayer:
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	var root := ColorRect.new()
+	root.color = Color.BLACK
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(root)
+	var title := Label.new()
+	title.text = LOADING_TITLE
+	title.set_anchors_preset(Control.PRESET_FULL_RECT)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 30)
+	title.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85, 0.6))
+	root.add_child(title)
+	var hint := Label.new()
+	hint.text = "загрузка…"
+	hint.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	hint.offset_left = -200
+	hint.offset_top = -60
+	hint.offset_right = -36
+	hint.offset_bottom = -30
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	hint.add_theme_font_size_override("font_size", 16)
+	hint.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85, 0.3))
+	root.add_child(hint)
+	add_child(layer)
+	return layer
+
+
+func _build() -> void:
 	rng.seed = WORLD_SEED
+	preload("res://scripts/soundscape.gd").make_buses()  # шины звука — до всех, кто в них играет
 	var mats := _make_materials()
 	_make_environment()
 	var sun := _make_sun()
@@ -88,6 +136,9 @@ func _ready() -> void:
 	_make_searchlights()
 	var mountain = preload("res://scripts/mountain.gd").new()
 	add_child(mountain)
+	var features = preload("res://scripts/mountain_features.gd").new()  # уступы, пещера, квартира, костёр
+	features.setup(player)
+	add_child(features)
 	_mark("гора")
 	var clouds_mat := _make_clouds()
 
@@ -106,6 +157,9 @@ func _ready() -> void:
 	journey.setup({"player": player, "sun": sun, "sky": sky_mat, "env": env, "rain": rain, "ambient": ambient,
 		"bodycam_mat": bodycam.get_child(0).material, "fog": fog_volume.material, "clouds_mat": clouds_mat})
 	add_child(journey)
+	var soundscape = preload("res://scripts/soundscape.gd").new()  # звук мира по зонам, шаги, музыка
+	soundscape.setup(player, journey)
+	add_child(soundscape)
 	var intro = preload("res://scripts/intro.gd").new()
 	intro.setup(player)
 	add_child(intro)
@@ -300,6 +354,8 @@ func _glow(color: Color, emission: Color, energy: float) -> StandardMaterial3D:
 
 ## Мигающий жёлтый на всех светофорах, мерцание неона и дрейф клочьев тумана.
 func _process(delta: float) -> void:
+	if not built:
+		return  # мир ещё строится под экраном загрузки
 	time += delta
 	signal_amber.emission_energy_multiplier = 2.5 if fmod(time, 1.6) < 0.8 else 0.0
 	beacon.emission_energy_multiplier = 5.0 if fmod(time, 2.0) < 0.25 else 0.3  # огни на шпилях

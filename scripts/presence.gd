@@ -21,6 +21,15 @@ const FADE_TIME := 1.8
 const NOTICE_TIME := 0.8         # столько её надо видеть, чтобы «заметить», с
 const NOTICE_CONE := 0.6         # радиан от центра взгляда
 const LINES := ["Стой", "Не уходи", "Останься"]
+const FAREWELL_START := 90.0     # с какого расстояния до уступа прощания она появляется там, м
+const FAREWELL_NEAR := 22.0      # подошёл ближе — оборачивается, даже если не смотрел
+const FAREWELL_NOTICE := 1.0     # столько смотреть на неё, чтобы она обернулась, с
+const FAREWELL_TURN := 1.8       # медленный поворот к герою, с
+const FAREWELL_LOOK := 1.8       # смотрит на него, с
+const FAREWELL_DISSOLVE := 3.5
+const FAREWELL_LINE := "Прости меня..."
+
+enum Farewell { NONE, WAITING, TURNING, GONE }
 
 var figure: Node3D
 var anim: AnimationPlayer
@@ -32,6 +41,8 @@ var walk_dir := Vector3.FORWARD
 var fading := false
 var seen_time := 0.0
 var noticed := false
+var farewell := Farewell.NONE
+var farewell_done := false
 var rng := RandomNumberGenerator.new()
 
 
@@ -51,6 +62,9 @@ func _physics_process(delta: float) -> void:
 	if player == null:
 		player = get_tree().get_first_node_in_group("player") as CharacterBody3D
 		return
+	if farewell != Farewell.NONE or _farewell_due():
+		_farewell_step(delta)
+		return
 
 	if figure.visible:
 		visible_time += delta
@@ -68,6 +82,61 @@ func _physics_process(delta: float) -> void:
 		timer -= delta
 		if timer <= 0.0:
 			_try_appear()
+
+
+## Прощание у края облаков. Герой поднимается сквозь облака — она стоит на уступе над облачным морем,
+## спиной к нему. Заметил её или подошёл — она медленно оборачивается к нему, стоит, растворяется,
+## и внизу проступает «Прости меня...». Больше её нет нигде — никогда.
+func _farewell_due() -> bool:
+	if farewell_done:
+		return false
+	var features := get_tree().get_first_node_in_group("mountain_features")
+	if features == null:
+		return false
+	var spot: Transform3D = features.farewell_spot
+	return player.global_position.distance_to(spot.origin) < FAREWELL_START and player.global_position.y > spot.origin.y - 45.0
+
+
+func _farewell_step(delta: float) -> void:
+	match farewell:
+		Farewell.NONE:
+			var spot: Transform3D = get_tree().get_first_node_in_group("mountain_features").farewell_spot
+			farewell = Farewell.WAITING
+			fading = true  # обычные появления больше не трогают фигуру
+			figure.global_transform = Transform3D(spot.basis, spot.origin)  # спиной к герою, лицом к облакам
+			figure.visible = true
+			anim.play("Idle")
+			mat.albedo_color.a = 0.0
+			create_tween().tween_property(mat, "albedo_color:a", 1.0, FADE_TIME)
+			seen_time = 0.0
+		Farewell.WAITING:
+			_watch_for_notice(delta, false)
+			var dist := figure.global_position.distance_to(player.global_position)
+			if seen_time >= FAREWELL_NOTICE or dist < FAREWELL_NEAR:
+				farewell = Farewell.TURNING
+				var to_hero := player.global_position - figure.global_position
+				to_hero.y = 0
+				var turned := Basis.looking_at(to_hero.normalized(), Vector3.UP)
+				var tween := create_tween()
+				tween.tween_method(func(k: float) -> void:
+					figure.basis = Basis(figure.basis.get_rotation_quaternion().slerp(turned.get_rotation_quaternion(), k)), 0.0, 1.0, FAREWELL_TURN).set_trans(Tween.TRANS_SINE)
+				tween.tween_interval(FAREWELL_LOOK)
+				tween.tween_callback(func() -> void:
+					var hud := get_tree().get_first_node_in_group("hud")
+					if hud:
+						hud.say(FAREWELL_LINE, 3.0, 1.5, 2.5)
+					var motif := AudioStreamPlayer.new()  # тихое пианино, пока она растворяется
+					motif.stream = load("res://assets/sounds/piano_motif.ogg")
+					motif.volume_db = -8.0
+					add_child(motif)
+					motif.play())
+				tween.tween_property(mat, "albedo_color:a", 0.0, FAREWELL_DISSOLVE).set_trans(Tween.TRANS_SINE)
+				tween.tween_callback(func() -> void:
+					figure.visible = false
+					farewell = Farewell.GONE
+					farewell_done = true)
+		_:
+			pass
 
 
 ## Вызов из админ-панели.
@@ -168,8 +237,8 @@ func _ground(space: PhysicsDirectSpaceState3D, spot: Vector3, reach: float) -> V
 
 
 ## Игрок её заметил — смотрит в её сторону, и между ними ничего нет. Тогда внизу экрана
-## медленно проступает просьба героя.
-func _watch_for_notice(delta: float) -> void:
+## медленно проступает просьба героя (при прощании — только считаем, сколько он на неё смотрит).
+func _watch_for_notice(delta: float, speak := true) -> void:
 	var cam := get_viewport().get_camera_3d()
 	var chest := figure.global_position + Vector3.UP * 1.3
 	var to_her := (chest - cam.global_position).normalized()
@@ -180,7 +249,7 @@ func _watch_for_notice(delta: float) -> void:
 		sight.exclude = [player.get_rid()]
 		looking = get_world_3d().direct_space_state.intersect_ray(sight).is_empty()
 	seen_time = seen_time + delta if looking else 0.0
-	if seen_time >= NOTICE_TIME:
+	if speak and seen_time >= NOTICE_TIME:
 		noticed = true
 		var hud := get_tree().get_first_node_in_group("hud")
 		if hud:

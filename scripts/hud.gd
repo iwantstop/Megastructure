@@ -23,6 +23,8 @@ var player: CharacterBody3D
 var task: PanelContainer
 var subtitle: Label
 var smoke_hint: Label
+var action_label: Label
+var action_tween: Tween
 var task_tween: Tween
 var sub_tween: Tween
 var shown_at_start := false
@@ -69,6 +71,10 @@ func _ready() -> void:
 	smoke_hint.modulate.a = 0.0
 	add_child(smoke_hint)
 
+	action_label = smoke_hint.duplicate()
+	action_label.text = ""
+	add_child(action_label)
+
 
 func _process(_delta: float) -> void:
 	if player == null:
@@ -114,6 +120,16 @@ func _task_step(tween: Tween, appear: bool, time: float) -> void:
 	var x := TASK_POS.x if appear else TASK_POS.x - TASK_SLIDE
 	tween.tween_property(task, "modulate:a", 1.0 if appear else 0.0, time)
 	tween.tween_property(task, "position:x", x, time)
+
+
+## Подсказка действия внизу («Разжечь костёр - E»): мягко проявляется, пока игрок рядом, и тает, когда отошёл.
+func action_hint(text: String, show_it: bool) -> void:
+	if action_tween:
+		action_tween.kill()
+	if show_it:
+		action_label.text = text
+	action_tween = create_tween()
+	action_tween.tween_property(action_label, "modulate:a", 1.0 if show_it else 0.0, 0.5).set_trans(Tween.TRANS_SINE)
 
 
 ## Субтитр внизу экрана: медленно проявляется, держится hold секунд и медленно тает.

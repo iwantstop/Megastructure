@@ -68,7 +68,7 @@ func _process(delta: float) -> void:
 
 	next_drop -= delta
 	if next_drop <= 0.0:
-		next_drop = randf_range(2.5, 7.0)
+		next_drop = randf_range(8.0, 16.0)  # реже: мелодию теперь ведёт пианино (soundscape.gd)
 		drop_freq = DROPS.pick_random()
 		drop_phase = 0.0
 		drop_age = 0.0
@@ -109,7 +109,7 @@ func _process(delta: float) -> void:
 		if rain_level > 0.01:
 			rain_lp += (randf() * 2.0 - 1.0 - rain_lp) * 0.25
 			rain_lp2 += (rain_lp - rain_lp2) * 0.35
-			var r := rain_lp2 * 0.5 * rain_level
+			var r := rain_lp2 * 0.2 * rain_level  # основной дождь теперь — записанные петли (soundscape.gd)
 			mix += Vector2(r, r * 0.9)
 
 		playback.push_frame(mix)
