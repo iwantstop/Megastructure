@@ -3,7 +3,8 @@ extends CanvasLayer
 ## Экранный текст поверх игры:
 ## - задание в левом верхнем углу — полупрозрачный текст «Я должен уйти», без плашки и обводки. Виден, когда герой
 ##   встаёт после падения, потом тает; снова появляется, пока зажат Tab;
-## - субтитры внизу по центру — медленно проявляются и медленно тают (их зовёт ангел).
+## - субтитры внизу по центру — медленно проявляются и медленно тают (их зовёт ангел);
+## - после того как герой встал — внизу на 5 секунд подсказка «Закурить - T» (smoke.gd).
 
 const TASK := "Я должен уйти"
 const TASK_AT_START := 7.0     # сколько задание висит после того, как герой встал, с
@@ -12,6 +13,8 @@ const TASK_HIDE := 0.6        # Tab отпущен: плавное исчеза�
 const TASK_POS := Vector2(28, 28)
 const TASK_SLIDE := 12.0      # текст слегка выезжает слева и уезжает обратно, px
 const TEXT_ALPHA := 0.7       # текст полупрозрачный, без обводки и тени
+const SMOKE_HINT := "Закурить - T"
+const SMOKE_HINT_TIME := 5.0  # столько подсказка полностью на экране после того, как герой встал
 const SUB_FADE_IN := 2.2
 const SUB_HOLD := 2.5
 const SUB_FADE_OUT := 2.5
@@ -19,6 +22,7 @@ const SUB_FADE_OUT := 2.5
 var player: CharacterBody3D
 var task: PanelContainer
 var subtitle: Label
+var smoke_hint: Label
 var task_tween: Tween
 var sub_tween: Tween
 var shown_at_start := false
@@ -53,6 +57,18 @@ func _ready() -> void:
 	subtitle.modulate.a = 0.0
 	add_child(subtitle)
 
+	smoke_hint = Label.new()
+	smoke_hint.text = SMOKE_HINT
+	smoke_hint.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	smoke_hint.offset_top = -90
+	smoke_hint.offset_bottom = -50
+	smoke_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	smoke_hint.add_theme_font_size_override("font_size", 22)
+	smoke_hint.add_theme_color_override("font_color", Color(0.95, 0.95, 0.95, TEXT_ALPHA))
+	smoke_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	smoke_hint.modulate.a = 0.0
+	add_child(smoke_hint)
+
 
 func _process(_delta: float) -> void:
 	if player == null:
@@ -66,6 +82,12 @@ func _process(_delta: float) -> void:
 		task_tween.chain().tween_interval(TASK_AT_START)
 		task_tween.chain()
 		_task_step(task_tween, false, 2.0)
+		# Подсказка внизу: 5 секунд полностью на экране, мягко проявляется и тает.
+		var hint_tween := create_tween()
+		hint_tween.tween_interval(2.0)
+		hint_tween.tween_property(smoke_hint, "modulate:a", 1.0, 0.8).set_trans(Tween.TRANS_SINE)
+		hint_tween.tween_interval(SMOKE_HINT_TIME)
+		hint_tween.tween_property(smoke_hint, "modulate:a", 0.0, 0.8).set_trans(Tween.TRANS_SINE)
 
 
 func _unhandled_input(event: InputEvent) -> void:

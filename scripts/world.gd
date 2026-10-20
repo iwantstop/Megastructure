@@ -75,6 +75,9 @@ func _ready() -> void:
 
 	var player := _spawn_player()
 	_make_paint_strokes(player.camera)
+	var smoke = preload("res://scripts/smoke.gd").new()  # сигареты «в руках» — перед камерой
+	smoke.setup(player)
+	player.camera.add_child(smoke)
 	var rain := _make_rain(player)
 	_make_ads(structures.ads)
 	_make_signs(structures.signs)

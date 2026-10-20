@@ -43,6 +43,9 @@ func start() -> void:
 		return
 	started = true
 	player.locked = true
+	var smoke := get_tree().get_first_node_in_group("smoke")
+	if smoke:
+		smoke.put_away()  # в финале руки пусты
 	player.velocity = Vector3.ZERO
 	# Лицом к солнцу: оно низко над облаками, по ту сторону горы от города.
 	player.target_yaw = 0.0
