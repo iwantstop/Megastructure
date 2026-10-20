@@ -7,7 +7,7 @@ extends Node
 ## Камеру не трясём (автора укачивает) — всё искажение только экранное.
 
 const STOPS := [
-	{"at": -650.0, "to": -1150.0, "line": "Скоро это закончится..."},
+	{"at": -420.0, "to": -1150.0, "line": "Скоро это закончится..."},   # сразу за началом моста (−368)
 	{"at": -1300.0, "to": -1800.0, "line": "Возможно именно сегодня..."},
 	{"at": -1950.0, "to": -2250.0, "line": "Закроются глаза..."},
 	# У подножия горы: подъём скучный и долгий — переносит почти к пещере.
@@ -30,6 +30,7 @@ var jerk := 0.0               # до следующего «срыва» кад�
 var level := 0.0
 var moved := false
 var prev_z := 0.0
+var held := false             # припадок отложен, пока на экране рассказ, — потом не пропускать его
 var rng := RandomNumberGenerator.new()
 
 var noise_player: AudioStreamPlayer
@@ -84,6 +85,18 @@ func _process(delta: float) -> void:
 ## дальше зоны (админ-панель) — эта точка считается пройденной.
 func _watch() -> void:
 	var z := player.global_position.z
+	# Пока посреди экрана рассказ (hud.narrate) — не перебивать его: припадок подождёт.
+	var hud := get_tree().get_first_node_in_group("hud")
+	if hud and hud.narration.modulate.a > 0.01:
+		held = held or (next_stop < STOPS.size() and STOPS[next_stop].has("at") and z <= STOPS[next_stop].at)
+		prev_z = z
+		return
+	if held and next_stop < STOPS.size() and absf(player.global_position.x) < ON_BRIDGE and not player.locked and not player.flying:
+		held = false
+		_start(next_stop)
+		prev_z = z
+		return
+	held = false
 	if next_stop < STOPS.size() and not player.flying and not player.locked:
 		var stop: Dictionary = STOPS[next_stop]
 		if stop.has("path_at"):
@@ -139,7 +152,8 @@ func _move() -> void:
 	if active < 0:
 		return
 	var stop: Dictionary = STOPS[active]
-	var spot := Vector3(clampf(player.global_position.x, -9.0, 9.0), 0.3, stop.get("to", 0.0))
+	# Вперёд, но не назад (если, пока ждал рассказа, ушёл дальше точки переноса).
+	var spot := Vector3(clampf(player.global_position.x, -9.0, 9.0), 0.3, minf(stop.get("to", 0.0), player.global_position.z))
 	var yaw := 0.0
 	if stop.has("path_to"):
 		var on_path := Mountain.path_point(stop.path_to)

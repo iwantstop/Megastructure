@@ -21,6 +21,7 @@ var check_floor := -1.0
 var fits := 0
 var sub_first := -1
 var sub_last := -1
+var narrated := false
 
 
 func _initialize() -> void:
@@ -74,6 +75,7 @@ func _process(delta: float) -> bool:
 				in_fit = true
 				fit_time = 0.0
 				fit_from = player.global_position
+				print("FIT start: narration alpha=%.2f text=%s" % [hud.narration.modulate.a, hud.narration.text.substr(0, 12)])
 			if in_fit:
 				fit_time += delta
 			if in_fit and not busy:
@@ -85,6 +87,9 @@ func _process(delta: float) -> bool:
 				check_floor -= delta
 				if check_floor <= 0.0:
 					print("FIT   on_floor=%s y=%.2f subtitle=\"%s\"" % [player.is_on_floor(), player.global_position.y, hud.subtitle.text])
+			if hud.narration.modulate.a > 0.99 and not narrated and hud.narration.text.begins_with("Чем"):
+				narrated = true
+				print("FIT narration at z=%.0f path=%.0f%%: \"%s...\"" % [player.global_position.z, _find("journey.gd").progress * 100.0, hud.narration.text.substr(0, 40)])
 			if player.global_position.z <= -2350.0 or run_time > 400.0:
 				print("FIT reached mountain: time=%.0fs fits=%d" % [run_time, fits])
 				_key(KEY_W, false)

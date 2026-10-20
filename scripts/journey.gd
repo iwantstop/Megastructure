@@ -18,6 +18,10 @@ const GRADE := [
 	[1.0, Color(1.0, 0.86, 0.62)],    # над облаками — золото
 ]
 
+const WARM_STORY := "Чем дальше он уходил от города, тем заметнее менялись краски мира. Дождь прекратился, холод отступил, а воздух стал сухим и тёплым — кровь на грязных бинтах запекалась, образуя корку"
+const WARM_STORY_AT := 0.68  # на этой отметке пути (как «Путь» в админ-панели) — рассказ о тепле
+
+var warm_told := false
 var override := -1.0  # из админ-панели: 0..1 — задать путь вручную, -1 — по положению игрока
 var progress := 0.0
 var sun_pitch_start: float
@@ -58,6 +62,12 @@ func _process(delta: float) -> void:
 	var above := smoothstep(330.0, 450.0, p.y)
 	var target := maxf(away, above) if override < 0.0 else override
 	progress = lerpf(progress, target, clampf(delta * 0.6, 0.0, 1.0))
+	if not warm_told and override < 0.0 and progress >= WARM_STORY_AT:
+		# Не поверх припадка и не одновременно с субтитром — дождаться, пока тот растает.
+		var hud := get_tree().get_first_node_in_group("hud")
+		if hud and not player.locked and hud.subtitle.modulate.a < 0.01:
+			warm_told = true
+			hud.narrate(WARM_STORY)
 	_apply(progress)
 
 

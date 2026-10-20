@@ -2,9 +2,10 @@ extends Node
 
 ## Вступление.
 ## 1. Падение: герой уже сорвался с крыши самой высокой башни и летит вниз на спине,
-##    глядя вверх, на удаляющуюся крышу. В ушах — нарастающий рёв ветра.
-## 2. Удар о землю: тьма, глухой удар, тишина.
-## 3. Он лежит у подножия башни и смотрит на крышу, с которой упал. Мимо пробегают крысы.
+##    глядя вверх, на удаляющуюся крышу. В ушах — нарастающий рёв ветра. Он паникует: кадр крупно
+##    трясёт, голову рывками бросает по сторонам, мир кренится, обзор шире (как падение в Mirror's Edge Catalyst).
+## 2. Удар о землю: тьма, глухой удар, тишина. Во тьме проступает текст (STORY) — ждёт пробел.
+## 3. Тьма спадает: он лежит у подножия башни и смотрит в сторону горы, чуть выше неё. Мимо пробегают крысы.
 ##    Сначала он просто лежит (LIE_TIME), потом всплывает подсказка «W — подняться».
 ##    Встаёт он только по нажатию W — сам не поднимается. Осмотреться можно мышью.
 
@@ -15,13 +16,20 @@ const HINT_ALPHA := 0.7              # как и задание, и субтит
 const GROUND := Vector3(4, 0.2, 86)   # где герой лежит после падения
 const FALL_FROM := 380.0             # с какой высоты начинается падение (крыша — на 760 м)
 const MIX_RATE := 22050.0
+const STORY := "Он лежал на земле, глядя в ледяные тучи, а мимо его тела сновали крысы. В этот момент пришло осознание: даже умереть ему не дано — так же, как и обрести счастье в городе, ставшем его тюрьмой."
+const LOOK_ABOVE_PEAK := 4.0         # после пробуждения взгляд — на гору и на столько градусов выше вершины
 
-enum State { FALLING, BLACKOUT, LYING, HINT, GETTING_UP, DONE }
+enum State { FALLING, BLACKOUT, STORY, LYING, HINT, GETTING_UP, DONE }
 
 var player: CharacterBody3D
 var layer: CanvasLayer
 var fade: ColorRect
 var hint: Label
+var story: Label
+var story_hint: Label
+var black_tween: Tween
+var panic_target := Vector2.ZERO
+var panic_jerk := 0.0
 var state := State.FALLING
 var t := 0.0
 var rat_mat := StandardMaterial3D.new()
@@ -88,6 +96,7 @@ func _process(delta: float) -> void:
 		State.FALLING:
 			var speed := -player.velocity.y
 			player.fall_shake = clampf(speed / 50.0, 0.0, 1.0) * 2.5
+			_panic(clampf(0.35 + speed / 55.0, 0.0, 1.0), delta)
 			_fill_wind(clampf(speed / 55.0, 0.15, 1.0))
 			if player.is_on_floor():
 				_impact()
@@ -99,6 +108,10 @@ func _process(delta: float) -> void:
 ## Подняться — только новым нажатием W, когда подсказка уже появилась
 ## (зажатая заранее клавиша не считается).
 func _unhandled_input(event: InputEvent) -> void:
+	if state == State.STORY and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
+		get_viewport().set_input_as_handled()
+		_end_story()
+		return
 	if state == State.HINT and event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_W:
 		_get_up()
 
@@ -110,6 +123,17 @@ func _show_hint() -> void:
 	tween.tween_property(hint, "modulate:a", 1.0, 1.6)
 	tween.tween_property(hint, "offset_top", hint.offset_top - HINT_RISE, 1.6)
 	tween.tween_property(hint, "offset_bottom", hint.offset_bottom - HINT_RISE, 1.6)
+
+
+## Паника: голову рывками бросает в случайные стороны (новый рывок каждые 0,2–0,55 с, резко),
+## поверх — крупная дрожь и крен (player.panic), обзор шире от скорости.
+func _panic(level: float, delta: float) -> void:
+	player.panic = level
+	panic_jerk -= delta
+	if panic_jerk <= 0.0:
+		panic_jerk = randf_range(0.2, 0.55)
+		panic_target = Vector2(randf_range(-0.55, 0.55), randf_range(-0.35, 0.3)) * level
+	player.panic_look = player.panic_look.lerp(panic_target, 1.0 - exp(-14.0 * delta))
 
 
 ## Рёв ветра: шум, громче и «ярче» с ростом скорости, с порывами.
@@ -128,6 +152,8 @@ func _fill_wind(level: float) -> void:
 func _impact() -> void:
 	state = State.BLACKOUT
 	player.fall_shake = 0.0
+	player.panic = 0.0
+	player.panic_look = Vector2.ZERO
 	player.global_position = GROUND
 	wind.stop()
 	fade.color.a = 1.0
@@ -136,17 +162,75 @@ func _impact() -> void:
 	thud.volume_db = 4.0
 	add_child(thud)
 	thud.play()
-	var tween := create_tween()
-	tween.tween_interval(3.0)
-	tween.tween_callback(_wake_up)
-	tween.tween_property(fade, "color:a", 0.0, 5.0).set_trans(Tween.TRANS_SINE)
+	_make_story()
+	black_tween = create_tween()
+	black_tween.tween_interval(2.0)
+	black_tween.tween_callback(func() -> void: state = State.STORY)
+	black_tween.tween_property(story, "modulate:a", 1.0, 1.6).set_trans(Tween.TRANS_SINE)
+	black_tween.tween_property(story_hint, "modulate:a", 1.0, 0.8)
+
+
+## Текст во тьме — как пролог: по центру, полупрозрачный, «пробел — дальше» внизу справа.
+func _make_story() -> void:
+	story = Label.new()
+	story.text = STORY
+	story.set_anchors_preset(Control.PRESET_FULL_RECT)
+	story.offset_left = 220
+	story.offset_right = -220
+	story.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	story.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	story.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	story.add_theme_font_size_override("font_size", 24)
+	story.add_theme_color_override("font_color", Color(0.88, 0.87, 0.85, 0.82))
+	story.add_theme_constant_override("line_spacing", 8)
+	story.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	story.modulate.a = 0.0
+	layer.add_child(story)
+	story_hint = Label.new()
+	story_hint.text = "пробел — дальше"
+	story_hint.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	story_hint.offset_left = -360
+	story_hint.offset_top = -60
+	story_hint.offset_right = -36
+	story_hint.offset_bottom = -30
+	story_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	story_hint.add_theme_font_size_override("font_size", 16)
+	story_hint.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85, 0.3))
+	story_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	story_hint.modulate.a = 0.0
+	layer.add_child(story_hint)
+
+
+## Пробел: текст тает, тьма спадает — он лежит и смотрит на гору.
+func _end_story() -> void:
+	state = State.BLACKOUT
+	if black_tween:
+		black_tween.kill()
+	black_tween = create_tween()
+	black_tween.tween_property(story, "modulate:a", 0.0, 1.0).set_trans(Tween.TRANS_SINE)
+	black_tween.parallel().tween_property(story_hint, "modulate:a", 0.0, 0.5)
+	black_tween.tween_callback(_wake_up)
+	black_tween.tween_property(fade, "color:a", 0.0, 4.0).set_trans(Tween.TRANS_SINE)
 
 
 func _wake_up() -> void:
 	state = State.LYING
 	t = 0.0
+	_look_at_mountain()
 	for i in 12:
 		_rat(i)
+
+
+## Лёжа камера и так запрокинута вверх (player.lying) — подбираем наклон головы так, чтобы взгляд
+## шёл на вершину горы и чуть выше.
+func _look_at_mountain() -> void:
+	var to_peak := Mountain.CENTER + Vector3.UP * Mountain.PEAK - player.global_position
+	var yaw := atan2(-to_peak.x, -to_peak.z)
+	var up := atan2(to_peak.y, Vector2(to_peak.x, to_peak.z).length()) + deg_to_rad(LOOK_ABOVE_PEAK)
+	player.rotation.y = yaw
+	player.target_yaw = yaw
+	player.target_pitch = up - 1.05 * player.lying
+	player.head.rotation.x = player.target_pitch
 
 
 func _get_up() -> void:
@@ -154,6 +238,8 @@ func _get_up() -> void:
 	create_tween().tween_property(hint, "modulate:a", 0.0, 1.4).set_trans(Tween.TRANS_SINE)  # плавно тает, пока он встаёт
 	var tween := create_tween()
 	tween.tween_property(player, "lying", 0.0, GET_UP_TIME).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	# Пока встаёт, голова поднимается вместе с ним: взгляд остаётся на горе, а не уходит в землю.
+	tween.parallel().tween_property(player, "target_pitch", 0.05, GET_UP_TIME).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	tween.tween_callback(_finish)
 
 
@@ -167,9 +253,16 @@ func _finish() -> void:
 func skip() -> void:
 	if state >= State.GETTING_UP:
 		return
+	if black_tween:
+		black_tween.kill()
+	if story:
+		story.modulate.a = 0.0
+		story_hint.modulate.a = 0.0
 	if state == State.FALLING:
 		wind.stop()
 		player.fall_shake = 0.0
+		player.panic = 0.0
+		player.panic_look = Vector2.ZERO
 		player.global_position = GROUND
 		player.velocity = Vector3.ZERO
 	fade.color.a = 0.0

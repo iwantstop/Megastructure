@@ -27,6 +27,8 @@ var locked := false   # во вступлении: осматриваться м
 var lying := 0.0      # 1 — лежит на спине и смотрит в небо, 0 — стоит
 var kneeling := 0.0   # 1 — стоит на коленях (финал на вершине)
 var fall_shake := 0.0  # тряска от встречного ветра при падении (вступление)
+var panic := 0.0       # паника в падении: крупная дрожь, кувырок по крену, шире обзор (вступление)
+var panic_look := Vector2.ZERO  # резкие рывки головы в панике: x — вбок, y — вверх-вниз, рад
 
 # Куда смотрим по мыши; тело и голова плавно догоняют.
 var target_yaw := 0.0
@@ -226,6 +228,12 @@ func _process(delta: float) -> void:
 		-bounce * 0.004 * amp + breath * 0.003 + _shake(0.0) * 0.01 * shake + 1.05 * lie,
 		_shake(100.0) * 0.01 * shake,
 		tilt + strafe_tilt + sway * 0.006 * amp + _shake(200.0) * 0.008 * shake + 0.25 * lie)
+	if panic > 0.0:
+		camera.rotation += Vector3(
+			panic_look.y + _shake(300.0) * 0.07 * panic,
+			panic_look.x + _shake(400.0) * 0.09 * panic,
+			_shake(500.0) * 0.22 * panic)
+	camera.fov = 85.0 + 18.0 * panic
 
 
 ## Плавный шум для тряски: медленная «качка» плюс мелкая дрожь.

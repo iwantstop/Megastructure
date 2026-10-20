@@ -4,9 +4,17 @@ extends CanvasLayer
 ## - задание в левом верхнем углу — полупрозрачный текст «Я должен уйти», без плашки и обводки. Виден, когда герой
 ##   встаёт после падения, потом тает; снова появляется, пока зажат Tab;
 ## - субтитры внизу по центру — медленно проявляются и медленно тают (их зовёт ангел);
-## - после того как герой встал — внизу на 5 секунд подсказка «Закурить - T» (smoke.gd).
+## - после того как герой встал — внизу на 5 секунд подсказка «Закурить - T» (smoke.gd);
+## - рассказ (narrate) — абзац истории посреди экрана поверх игры: проявляется, держится, пока его
+##   можно прочитать, и тает. Первый — когда отработали подсказки после подъёма (вера в ангела);
+##   после него задание меняется на «Я должен найти его».
 
 const TASK := "Я должен уйти"
+const TASK_FIND := "Я должен найти его"
+const ANGEL_STORY := "В отчаянии родилась вера: некий ангел не даёт ему умереть, даровал способность видеть то, что скрыто от других, — различать добро и зло в мире, где мораль давно утрачена, где за каждым добрым поступком скрывается обман."
+const ANGEL_STORY_AT := 11.5  # через столько секунд после подъёма — когда задание и «Закурить - T» уже растаяли
+const NARRATE_FADE := 1.8
+const NARRATE_CPS := 17.0     # скорость спокойного чтения, знаков в секунду
 const TASK_AT_START := 7.0     # сколько задание висит после того, как герой встал, с
 const TASK_SHOW := 0.45       # Tab: плавное появление, с
 const TASK_HIDE := 0.6        # Tab отпущен: плавное исчезание, с
@@ -22,6 +30,8 @@ const SUB_FADE_OUT := 2.5
 var player: CharacterBody3D
 var task: PanelContainer
 var subtitle: Label
+var narration: Label
+var narrate_tween: Tween
 var smoke_hint: Label
 var action_label: Label
 var action_tween: Tween
@@ -75,6 +85,21 @@ func _ready() -> void:
 	action_label.text = ""
 	add_child(action_label)
 
+	narration = Label.new()
+	narration.set_anchors_preset(Control.PRESET_FULL_RECT)
+	narration.offset_left = 260
+	narration.offset_right = -260
+	narration.offset_top = 160    # чуть ниже середины кадра
+	narration.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	narration.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	narration.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	narration.add_theme_font_size_override("font_size", 24)
+	narration.add_theme_color_override("font_color", Color(0.95, 0.94, 0.92, TEXT_ALPHA))
+	narration.add_theme_constant_override("line_spacing", 8)
+	narration.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	narration.modulate.a = 0.0
+	add_child(narration)
+
 
 func _process(_delta: float) -> void:
 	if player == null:
@@ -94,6 +119,10 @@ func _process(_delta: float) -> void:
 		hint_tween.tween_property(smoke_hint, "modulate:a", 1.0, 0.8).set_trans(Tween.TRANS_SINE)
 		hint_tween.tween_interval(SMOKE_HINT_TIME)
 		hint_tween.tween_property(smoke_hint, "modulate:a", 0.0, 0.8).set_trans(Tween.TRANS_SINE)
+		# Когда подсказки отработали — вера в ангела, и задание меняется.
+		var story_tween := create_tween()
+		story_tween.tween_interval(ANGEL_STORY_AT)
+		story_tween.tween_callback(func() -> void: narrate(ANGEL_STORY, _new_task))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -105,6 +134,32 @@ func _unhandled_input(event: InputEvent) -> void:
 			tab_held = false
 			_task_step(_new_task_tween(), false, TASK_HIDE)
 		get_viewport().set_input_as_handled()
+
+
+## Новое задание «Я должен найти его»: показывается так же, как в начале, — проявляется, висит и тает.
+func _new_task() -> void:
+	(task.get_child(0) as Label).text = TASK_FIND
+	if tab_held:
+		return
+	var tween := _new_task_tween()
+	_task_step(tween, true, 1.5)
+	tween.chain().tween_interval(TASK_AT_START)
+	tween.chain()
+	_task_step(tween, false, 2.0)
+
+
+## Абзац истории посреди экрана: проявляется, держится, сколько нужно на чтение, и тает; потом — done.
+func narrate(text: String, done: Callable = Callable()) -> void:
+	if narrate_tween:
+		narrate_tween.kill()
+	narration.text = text
+	narration.modulate.a = 0.0
+	narrate_tween = create_tween()
+	narrate_tween.tween_property(narration, "modulate:a", 1.0, NARRATE_FADE).set_trans(Tween.TRANS_SINE)
+	narrate_tween.tween_interval(3.0 + text.length() / NARRATE_CPS)
+	narrate_tween.tween_property(narration, "modulate:a", 0.0, NARRATE_FADE).set_trans(Tween.TRANS_SINE)
+	if done.is_valid():
+		narrate_tween.tween_callback(done)
 
 
 ## Новая анимация плашки — прежняя (если ещё идёт) обрывается там, где была.
