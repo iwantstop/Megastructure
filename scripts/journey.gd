@@ -10,6 +10,13 @@ const COLD_HORIZON := Color(0.5, 0.53, 0.57)
 const WARM_TOP := Color(0.42, 0.58, 0.82)
 const WARM_HORIZON := Color(0.9, 0.8, 0.66)
 const AWAY_SHARE := 0.7  # сколько тепла даёт одна только дорога; остальное — выход над облаками
+# Гамма кадра по пути (живописный стиль): у каждой зоны свой почти единственный цвет.
+const GRADE := [
+	[0.0, Color(0.55, 0.68, 0.88)],   # город — холодная сталь
+	[0.3, Color(0.68, 0.6, 0.9)],     # мост над бездной — сирень
+	[0.62, Color(0.95, 0.74, 0.5)],   # гора под облаками — янтарь
+	[1.0, Color(1.0, 0.86, 0.62)],    # над облаками — золото
+]
 
 var override := -1.0  # из админ-панели: 0..1 — задать путь вручную, -1 — по положению игрока
 var progress := 0.0
@@ -77,5 +84,16 @@ func _apply(k: float) -> void:
 	env.adjustment_saturation = lerpf(0.82, 1.05, k)
 	fog.density = lerpf(0.08, 0.0, k)
 	bodycam_mat.set_shader_parameter("saturation", lerpf(0.85, 1.0, k))
+	bodycam_mat.set_shader_parameter("grade_tint", _grade(k))
+	bodycam_mat.set_shader_parameter("grade_amount", lerpf(0.6, 0.3, smoothstep(AWAY_SHARE, 1.0, k)))  # над облаками — мягче: небо и солнце важнее
 	clouds_mat.set_shader_parameter("under_color", Color(0.28, 0.3, 0.34).lerp(Color(0.62, 0.6, 0.6), k))
 	clouds_mat.set_shader_parameter("coverage", lerpf(0.82, 0.55, k))
+
+
+## Цвет гаммы на отрезке пути k (0 — город, 1 — над облаками), плавно между зонами.
+func _grade(k: float) -> Color:
+	for i in range(1, GRADE.size()):
+		if k <= GRADE[i][0]:
+			var t := inverse_lerp(GRADE[i - 1][0], GRADE[i][0], k)
+			return (GRADE[i - 1][1] as Color).lerp(GRADE[i][1], smoothstep(0.0, 1.0, t))
+	return GRADE[-1][1]
