@@ -1,13 +1,15 @@
 shader_type canvas_item;
 
 // Экранный эффект поверх 3D:
-// 1. Живопись — фильтр Кувахары: детали собираются в мелкие пятна краски с чёткими краями,
-//    поверх — фактура кисти: короткие штрихи вдоль контуров; лёгкая резкость возвращает
-//    окнам, неону и разметке чёткость (стиль «Аркейна», но без «мыла»).
+// 1. Живопись — фильтр Кувахары: детали собираются в мелкие пятна краски с чёткими краями;
+//    лёгкая резкость возвращает окнам, неону и разметке чёткость (стиль «Аркейна», но без «мыла»).
+//    Сами мазки кисти — на поверхностях мира (paint_strokes.gdshader), а не узором на экране.
 // 2. Гамма зоны — кадр почти одноцветный (город — холодная сталь, мост — сирень, гора — янтарь,
 //    над облаками — золото), но яркие насыщенные пятна (неон, огни) сохраняют свой цвет — акценты.
 // 3. Нагрудная камера: широкоугольное искажение по краям, цветовые разводы, виньетка, зерно.
-// 4. Припадок (glitch): кадр рвётся полосами, расслаивается цвет, помехи блоками, негатив, чернота.
+// 4. Кино: тени — в холодную бирюзу, света — в тёплое, мягкая S-кривая (без общего осветления);
+//    от самых ярких точек (неон, фонари, солнце) — лёгкие горизонтальные блики, как у кинообъектива.
+// 5. Припадок (glitch): кадр рвётся полосами, расслаивается цвет, помехи блоками, негатив, чернота.
 
 uniform sampler2D screen : hint_screen_texture, filter_linear;  // без мипмапов — их пересчёт каждый кадр стоит FPS
 uniform float distortion = 0.14;
@@ -19,12 +21,15 @@ uniform float saturation = 0.88;
 uniform float paint = 0.7;                  // 0 — обычная картинка, 1 — только пятна краски
 uniform int paint_radius : hint_range(1, 6) = 2;
 uniform float paint_scale = 1.0;            // шаг выборки в пикселях: 1 — мелкий, детальный мазок
-uniform float stroke_amount = 0.07;         // сила фактуры кисти (доля яркости)
-uniform float stroke_length = 7.0;          // длина штриха, px
-uniform float stroke_width = 2.0;           // ширина штриха, px
 uniform float sharpen = 0.6;                // возврат резкости после Кувахары
 uniform vec3 grade_tint = vec3(0.55, 0.68, 0.88);
 uniform float grade_amount : hint_range(0.0, 1.0) = 0.6;
+uniform vec3 shadow_tint = vec3(0.9, 1.0, 1.08);    // тени — холодная бирюза
+uniform vec3 highlight_tint = vec3(1.07, 1.0, 0.9); // света — тёплые
+uniform float split_tone = 0.6;
+uniform float film_curve = 0.3;                     // мягкая S-кривая контраста
+uniform float streak = 0.18;                        // горизонтальные блики от ярких точек
+uniform float streak_threshold = 0.82;
 
 uniform float glitch = 0.0;                 // 0 — спокойно, 1 — припадок в полную силу
 uniform float glitch_seed = 0.0;            // меняется рывками — каждый «срыв» кадра другой
@@ -68,18 +73,21 @@ vec3 kuwahara(vec2 uv, vec2 px) {
 	return result;
 }
 
-// Фактура кисти: короткие штрихи, повёрнутые вдоль контура (поперёк градиента яркости).
-// Направление округляется до 8 положений — штрихи ложатся ровными «полосами» мазков.
-float brush(vec2 pixel, vec2 gradient) {
-	float angle = length(gradient) > 0.004 ? atan(gradient.y, gradient.x) + 1.5708 : 0.6;
-	angle = round(angle / 0.3927) * 0.3927;
-	vec2 along = vec2(cos(angle), sin(angle));
-	vec2 p = vec2(dot(pixel, along), dot(pixel, vec2(-along.y, along.x)));
-	float row = floor(p.y / stroke_width);
-	p.x += rand(vec2(row, angle)) * stroke_length;  // ряды сдвинуты — штрихи не выстраиваются в сетку
-	vec2 cell = floor(vec2(p.x / stroke_length, row));
-	return rand(cell + angle * 7.0) - 0.5;
+// Горизонтальный блик: яркие точки слева и справа «растекаются» тонкой полосой, как в кинообъективе.
+vec3 streaks(vec2 uv, vec2 px) {
+	vec3 sum = vec3(0.0);
+	float weight = 0.0;
+	for (int i = 1; i <= 6; i++) {
+		float off = exp2(float(i)) * 1.5;
+		float w = 1.0 / float(i);
+		vec3 a = texture(screen, uv + vec2(off * px.x, 0.0)).rgb;
+		vec3 b = texture(screen, uv - vec2(off * px.x, 0.0)).rgb;
+		sum += (max(a - streak_threshold, 0.0) + max(b - streak_threshold, 0.0)) * w;
+		weight += w;
+	}
+	return sum / weight;
 }
+
 
 void fragment() {
 	vec2 c = SCREEN_UV - 0.5;
@@ -109,10 +117,8 @@ void fragment() {
 		vec3 r = texture(screen, uv + vec2(px.x, 0.0)).rgb;
 		vec3 d = texture(screen, uv - vec2(0.0, px.y)).rgb;
 		vec3 u = texture(screen, uv + vec2(0.0, px.y)).rgb;
-		vec2 gradient = vec2(dot(r - l, LUMA), dot(u - d, LUMA));
 		col = mix(base, kuwahara(uv, px * paint_scale), paint);
 		col += (col - (l + r + d + u) * 0.25) * sharpen;  // края, окна и неон остаются острыми
-		col *= 1.0 + brush(uv / px, gradient) * stroke_amount * 2.0;
 	}
 
 	// Цветовые разводы по краям — поверх «краски»; в припадке — сильное расслоение.
@@ -126,6 +132,14 @@ void fragment() {
 	vec3 graded = grade_tint * (luma / max(dot(grade_tint, LUMA), 1e-3));
 	float accent = smoothstep(0.2, 0.5, sat) * smoothstep(0.1, 0.3, luma);
 	col = mix(col, graded, grade_amount * min(paint * 1.25, 1.0) * (1.0 - accent * 0.95));
+
+	// Кино: сплит-тонинг по яркости и мягкая S-кривая (середина остаётся на месте — кадр не светлеет).
+	luma = dot(col, LUMA);
+	vec3 toned = col * mix(shadow_tint, highlight_tint, smoothstep(0.1, 0.7, luma));
+	col = mix(col, toned, split_tone);
+	vec3 curved = clamp(col, 0.0, 1.0);
+	col = mix(col, curved * curved * (3.0 - 2.0 * curved), film_curve);
+	col += streaks(uv, px) * streak * vec3(0.85, 0.92, 1.0);
 
 	luma = dot(col, LUMA);
 	col = mix(vec3(luma), col, saturation);

@@ -56,7 +56,7 @@ func _ready() -> void:
 	fly_box = _check(box, "Полёт (F)  — Space вверх, Ctrl вниз", func(on: bool) -> void: player.set_flying(on))
 	_check(box, "Сквозь стены", func(on: bool) -> void: player.set_noclip(on))
 	_check(box, "Эффект бодикамеры", func(on: bool) -> void: bodycam.visible = on).button_pressed = true
-	_check(box, "Живопись (мазки и гамма зоны)", func(on: bool) -> void: (bodycam.get_child(0) as ColorRect).material.set_shader_parameter("paint", 0.7 if on else 0.0)).button_pressed = true
+	_check(box, "Живопись (мазки и гамма зоны)", _on_paint).button_pressed = true
 	_check(box, "Глобальное освещение (тяжёлое)", func(on: bool) -> void: env.sdfgi_enabled = on).button_pressed = true
 	_slider(box, "Скорость полёта", 5, 200, player.fly_speed, func(v: float) -> void: player.fly_speed = v)
 	_check(box, "Путь героя вручную", _on_manual_journey)
@@ -70,6 +70,12 @@ func _ready() -> void:
 	_button(box, "К началу тропы на гору", func() -> void: _teleport(Mountain.path_point(0.0)))
 	_button(box, "На тропу над облаками", func() -> void: _teleport(Mountain.path_point(0.85)))
 	_button(box, "Финал на вершине", _to_finale)
+
+
+func _on_paint(on: bool) -> void:
+	(bodycam.get_child(0) as ColorRect).material.set_shader_parameter("paint", 0.7 if on else 0.0)
+	for node in get_tree().get_nodes_in_group("paint_strokes"):
+		node.visible = on
 
 
 ## Ставит героя на тропу лицом вперёд по ней.

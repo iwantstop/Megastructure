@@ -10,6 +10,7 @@ const Mannequins = preload("res://scripts/mannequins.gd")
 const Props = preload("res://scripts/props.gd")
 const CONCRETE_SHADER = preload("res://shaders/concrete.gdshader")
 const BODYCAM_SHADER = preload("res://shaders/bodycam.gdshader")
+const STROKES_SHADER = preload("res://shaders/paint_strokes.gdshader")
 const FACADE_SHADER = preload("res://shaders/facade.gdshader")
 const HOLOGRAM_SHADER = preload("res://shaders/hologram.gdshader")
 const SIGN_WORDS := ["БАР", "ОТЕЛЬ", "ЛЮБОВЬ", "ДЕНЬГИ", "НОЧЬ", "СОН", "КЛУБ", "ЕДА", "24 ЧАСА", "ЗАЙМЫ", "РАЙ"]
@@ -73,6 +74,7 @@ func _ready() -> void:
 	_mark("лифты, вещи, свет")
 
 	var player := _spawn_player()
+	_make_paint_strokes(player.camera)
 	var rain := _make_rain(player)
 	_make_ads(structures.ads)
 	_make_signs(structures.signs)
@@ -355,8 +357,11 @@ func _make_environment() -> void:
 	env.ssao_enabled = true
 	env.ssr_enabled = true
 	env.glow_enabled = true
-	env.glow_intensity = 0.6  # неон, фары и огни расплываются в тумане
+	env.glow_intensity = 0.8  # неон, фары и огни расплываются в тумане — мягкое киношное свечение
 	env.glow_bloom = 0.05
+	env.glow_hdr_threshold = 0.9
+	for level in [3, 4, 5]:  # широкие слои свечения — ореол вокруг огней, а не только «жёсткая» кайма
+		env.set_glow_level(level, 1.0)
 	# Чуть приглушённые цвета, но с контрастом.
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 0.9
@@ -412,6 +417,22 @@ func _make_sun() -> DirectionalLight3D:
 	sun.directional_shadow_max_distance = 300.0
 	add_child(sun)
 	return sun
+
+
+## Мазки кисти на поверхностях мира: полноэкранный квадрат перед камерой (shaders/paint_strokes.gdshader).
+## Группа "paint_strokes" — админ-панель включает и выключает его вместе с живописью.
+func _make_paint_strokes(camera: Camera3D) -> void:
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2, 2)
+	var mat := ShaderMaterial.new()
+	mat.shader = STROKES_SHADER
+	var pass_node := MeshInstance3D.new()
+	pass_node.mesh = quad
+	pass_node.material_override = mat
+	pass_node.extra_cull_margin = 16384.0  # квадрат рисуется всегда — он «на экране», а не в мире
+	pass_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	pass_node.add_to_group("paint_strokes")
+	camera.add_child(pass_node)
 
 
 ## Экранный эффект нагрудной камеры поверх всего 3D.
