@@ -34,7 +34,7 @@ var seat_mat: Material
 var placed: Array[Vector2] = []
 var floor_check: Callable  # есть ли пол в точке (над колодцами — нет)
 
-## Итог: кого где поставить. {pos, yaw, anim, at, alive}
+## Итог: кого где поставить. {pos, yaw, anim, at}
 var figures: Array[Dictionary] = []
 
 
@@ -124,7 +124,6 @@ func _figure(pos: Vector3, yaw: float, pose: Dictionary) -> void:
 		"yaw": yaw,
 		"anim": pose.anim,
 		"at": rng.randf() if at < 0.0 else at,
-		"alive": rng.randf() < 0.12,  # немногие очень-очень медленно продолжают движение
 	})
 	var root := Transform3D(Basis(Vector3.UP, yaw), pos)
 	if pose.get("sit", false):

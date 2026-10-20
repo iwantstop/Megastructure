@@ -1,19 +1,14 @@
 extends CanvasLayer
 
 ## Финал на вершине. Герой падает на колени, лицом к солнцу. Ангела нет — его не было никогда.
-## Он ложится, закрывает глаза; мир медленно растворяется в тёплом свете. Конец.
+## Всё без слов: он долго смотрит на солнце, ложится, закрывает глаза; мир медленно
+## растворяется в тёплом свете, потом в темноте. Конец.
 
-const LINES := [
-	"Где же ты, мой ангел?",
-	"…",
-	"Никакого ангела не было.",
-	"Это был я.",
-]
+const SILENCE := 10.0  # сколько он молча смотрит на солнце
 
 var player: CharacterBody3D
 var ambient: AudioStreamPlayer
 var started := false
-var label: Label
 var veil: ColorRect
 
 
@@ -29,15 +24,6 @@ func _ready() -> void:
 	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	veil.color = Color(1.0, 0.93, 0.82, 0.0)
 	add_child(veil)
-	label = Label.new()
-	label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 34)
-	label.add_theme_color_override("font_color", Color(1, 1, 1))
-	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
-	label.modulate.a = 0.0
-	add_child(label)
 
 
 func _process(_delta: float) -> void:
@@ -63,13 +49,7 @@ func start() -> void:
 	var tween := create_tween()
 	tween.tween_interval(1.0)
 	tween.tween_property(player, "kneeling", 1.0, 3.0).set_trans(Tween.TRANS_SINE)  # падает на колени
-	tween.tween_interval(2.0)
-	for line in LINES:
-		tween.tween_callback(func() -> void: label.text = line)
-		tween.tween_property(label, "modulate:a", 1.0, 2.0)
-		tween.tween_interval(3.0)
-		tween.tween_property(label, "modulate:a", 0.0, 2.0)
-		tween.tween_interval(1.0)
+	tween.tween_interval(SILENCE)
 	# Ложится на спину, смотрит в небо и закрывает глаза.
 	tween.tween_property(player, "kneeling", 0.0, 3.0)
 	tween.parallel().tween_property(player, "lying", 1.0, 4.0).set_trans(Tween.TRANS_SINE)
@@ -77,10 +57,3 @@ func start() -> void:
 	tween.tween_property(veil, "color:a", 1.0, 8.0)
 	tween.parallel().tween_property(ambient, "volume_db", -60.0, 10.0)
 	tween.tween_property(veil, "color", Color(0, 0, 0, 1), 4.0)
-	tween.tween_callback(_the_end)
-	tween.tween_property(label, "modulate:a", 1.0, 3.0)
-
-
-func _the_end() -> void:
-	label.text = "Конец"
-	label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))

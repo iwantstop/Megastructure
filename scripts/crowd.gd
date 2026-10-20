@@ -1,12 +1,9 @@
 extends Node3D
 
 ## Застывшая толпа: модель манекена из библиотеки анимаций, остановленная в кадре
-## живой анимации. Некоторые фигуры не совсем застыли — они продолжают движение
-## в десятки раз медленнее, и это замечаешь, только если долго смотреть.
+## живой анимации — будто люди шли по своим делам и замерли. Никто не двигается.
 
 const MODEL := preload("res://assets/characters/animation_library/AnimationLibrary_Godot_Standard.glb")
-
-var alive: Array[AnimationPlayer] = []
 
 
 func setup(figures: Array[Dictionary], plastic: Material) -> void:
@@ -30,11 +27,6 @@ func setup(figures: Array[Dictionary], plastic: Material) -> void:
 		var anim: String = f.anim
 		if not player.has_animation(anim):
 			anim = "Idle"
-		player.get_animation(anim).loop_mode = Animation.LOOP_LINEAR  # «оживающие» идут по кругу
 		player.play(anim)
 		player.seek(player.current_animation_length * float(f.at), true)
-		if f.alive:
-			player.speed_scale = randf_range(0.03, 0.07)
-			alive.append(player)
-		else:
-			player.pause()
+		player.pause()

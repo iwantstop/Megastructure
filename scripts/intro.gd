@@ -5,9 +5,13 @@ extends Node
 ##    глядя вверх, на удаляющуюся крышу. В ушах — нарастающий рёв ветра.
 ## 2. Удар о землю: тьма, глухой удар, тишина.
 ## 3. Он лежит у подножия башни и смотрит на крышу, с которой упал. Мимо пробегают крысы.
-##    Осмотреться можно мышью; по W он медленно поднимается.
+##    Сначала он просто лежит (LIE_TIME), потом всплывает подсказка «W — подняться».
+##    Встаёт он только по нажатию W — сам не поднимается. Осмотреться можно мышью.
 
 const GET_UP_TIME := 4.5
+const LIE_TIME := 4.0                # сколько он лежит, прежде чем всплывёт подсказка
+const HINT_RISE := 14.0              # подсказка всплывает снизу на столько пикселей
+const HINT_ALPHA := 0.7              # как и задание, и субтитры — полупрозрачная, без обводки
 const GROUND := Vector3(4, 0.2, 86)   # где герой лежит после падения
 const FALL_FROM := 380.0             # с какой высоты начинается падение (крыша — на 760 м)
 const MIX_RATE := 22050.0
@@ -54,9 +58,15 @@ func _ready() -> void:
 
 	hint = Label.new()
 	hint.text = "W — подняться"
+	hint.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	hint.offset_top = -150 + HINT_RISE
+	hint.offset_bottom = -90 + HINT_RISE
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hint.add_theme_font_size_override("font_size", 26)
+	hint.add_theme_color_override("font_color", Color(0.95, 0.95, 0.95, HINT_ALPHA))
+	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hint.modulate.a = 0.0
-	hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	hint.position.y -= 80
 	layer.add_child(hint)
 
 	rat_mat.albedo_color = Color(0.08, 0.07, 0.07)
@@ -82,12 +92,24 @@ func _process(delta: float) -> void:
 			if player.is_on_floor():
 				_impact()
 		State.LYING:
-			if t > 8.0:
-				state = State.HINT
-				create_tween().tween_property(hint, "modulate:a", 0.6, 2.0)
-		State.HINT:
-			if Input.is_physical_key_pressed(KEY_W):
-				_get_up()
+			if t > LIE_TIME:
+				_show_hint()
+
+
+## Подняться — только новым нажатием W, когда подсказка уже появилась
+## (зажатая заранее клавиша не считается).
+func _unhandled_input(event: InputEvent) -> void:
+	if state == State.HINT and event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_W:
+		_get_up()
+
+
+## Подсказка аккуратно всплывает снизу и проявляется.
+func _show_hint() -> void:
+	state = State.HINT
+	var tween := create_tween().set_parallel().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tween.tween_property(hint, "modulate:a", 1.0, 1.6)
+	tween.tween_property(hint, "offset_top", hint.offset_top - HINT_RISE, 1.6)
+	tween.tween_property(hint, "offset_bottom", hint.offset_bottom - HINT_RISE, 1.6)
 
 
 ## Рёв ветра: шум, громче и «ярче» с ростом скорости, с порывами.
@@ -129,7 +151,7 @@ func _wake_up() -> void:
 
 func _get_up() -> void:
 	state = State.GETTING_UP
-	create_tween().tween_property(hint, "modulate:a", 0.0, 0.8)
+	create_tween().tween_property(hint, "modulate:a", 0.0, 1.4).set_trans(Tween.TRANS_SINE)  # плавно тает, пока он встаёт
 	var tween := create_tween()
 	tween.tween_property(player, "lying", 0.0, GET_UP_TIME).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	tween.tween_callback(_finish)

@@ -2,17 +2,14 @@ extends Node
 
 ## «Сон»: мир меняется почти незаметно, чем дольше гуляешь.
 ## - солнце медленно опускается, небо и туман теплеют;
-## - иногда вещь, оставшаяся далеко позади, снова оказывается где-то рядом;
-## - спустя время на горизонте вырастает то, чего раньше не было.
+## - иногда вещь, оставшаяся далеко позади, снова оказывается где-то рядом.
 
 const DUSK_TIME := 1500.0   # за сколько секунд «день» доходит до заката
-const SPIRE_TIME := 480.0   # когда появляется новый шпиль
 
 var time_scale := 1.0       # меняется из админ-панели
 var sun: DirectionalLight3D
 var sky: ProceduralSkyMaterial
 var vignettes: Array[Node3D] = []
-var spire: MeshInstance3D
 var player: CharacterBody3D
 var elapsed := 0.0
 var next_shift := 180.0
@@ -23,7 +20,7 @@ var sky_top_start: Color
 var horizon_start: Color
 
 
-func setup(p_sun: DirectionalLight3D, p_sky: ProceduralSkyMaterial, p_vignettes: Array[Node3D], spire_mat: Material) -> void:
+func setup(p_sun: DirectionalLight3D, p_sky: ProceduralSkyMaterial, p_vignettes: Array[Node3D]) -> void:
 	sun = p_sun
 	sky = p_sky
 	vignettes = p_vignettes
@@ -32,20 +29,9 @@ func setup(p_sun: DirectionalLight3D, p_sky: ProceduralSkyMaterial, p_vignettes:
 	sky_top_start = sky.sky_top_color
 	horizon_start = sky.sky_horizon_color
 
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = 12
-	mesh.bottom_radius = 90
-	mesh.height = 2600
-	mesh.radial_segments = 32
-	spire = MeshInstance3D.new()
-	spire.mesh = mesh
-	spire.material_override = spire_mat
-	spire.visible = false
-
 
 func _ready() -> void:
 	rng.randomize()
-	add_child(spire)
 
 
 func _physics_process(delta: float) -> void:
@@ -60,9 +46,6 @@ func _physics_process(delta: float) -> void:
 	if next_shift <= 0.0:
 		next_shift = rng.randf_range(150, 240)
 		shift_vignette()
-
-	if not spire.visible and elapsed > SPIRE_TIME:
-		show_spire()
 
 
 ## Берёт вещь, которую игрок сейчас не видит и оставил далеко, и тихо ставит её
@@ -110,14 +93,3 @@ func _open_floor(spot: Vector3) -> Variant:
 		if not space.intersect_point(probe, 1).is_empty():
 			return null
 	return floor_y
-
-
-## Шпиль вырастает за спиной у игрока, далеко в тумане.
-func show_spire() -> void:
-	var cam := get_viewport().get_camera_3d()
-	var forward := -cam.global_transform.basis.z
-	forward.y = 0
-	var spot := player.global_position - forward.normalized() * 1000.0
-	spot.y = 1300.0
-	spire.position = spot
-	spire.visible = true

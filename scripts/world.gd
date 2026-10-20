@@ -87,7 +87,7 @@ func _ready() -> void:
 	var clouds_mat := _make_clouds()
 
 	var dream = preload("res://scripts/dream.gd").new()
-	dream.setup(sun, sky_mat, vignettes, mats.concrete_dark)
+	dream.setup(sun, sky_mat, vignettes)
 	add_child(dream)
 	var presence = preload("res://scripts/presence.gd").new()
 	add_child(presence)
@@ -116,6 +116,8 @@ func _ready() -> void:
 	var scripted := "--demo" in args or "--bench" in args or "--map" in args
 	if not scripted:
 		add_child(admin)  # в демо и бенчмарке панель не нужна: случайное F1 не испортит запись
+	if not ("--bench" in args or "--map" in args):
+		add_child(preload("res://scripts/hud.gd").new())  # задание и субтитры; в демо — тоже, для видеоотчёта
 
 	_mark("всё остальное")
 

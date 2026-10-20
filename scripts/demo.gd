@@ -49,7 +49,12 @@ func _process(delta: float) -> void:
 		return
 	t += delta
 	if _passed(6.0):
-		intro.skip()  # встаёт
+		if intro.state == intro.State.HINT:
+			_key(KEY_W, true)  # встаёт, как игрок: по W
+		else:
+			intro.skip()
+	if _passed(6.3):
+		_key(KEY_W, false)
 	if t > 10.0 and t < 17.0:
 		player.target_yaw += delta * TAU / 7.0  # медленный оборот вокруг себя
 	if _passed(17.0):
@@ -109,7 +114,7 @@ func _process(delta: float) -> void:
 	if shot_index < shots.size() and t >= shots[shot_index]:
 		shot_index += 1
 		_capture(shot_index)
-	if t > 152.0:
+	if t > 138.0:
 		get_tree().quit()
 
 
