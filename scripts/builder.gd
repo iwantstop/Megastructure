@@ -14,6 +14,8 @@ const NEAR := Rect2(-300, -400, 600, 580)  # город с запасом: зд�
 const CELL_NEAR := 192.0
 const CELL_FAR := 640.0
 const DETAIL_RANGE := 200.0               # дальше этого мелочи не рисуются
+const CELL_DETAIL := 96.0                 # мелочи режем мелко везде: движок меряет дальность до ЦЕНТРА куска,
+                                          # и в 640-метровом куске перила пропадали прямо под ногами
 const DETAIL_THIN := 0.6                  # деталь «мелкая», если её средний размер меньше
 const OCCLUDER_MIN := 8.0                 # окклюдерами становятся объёмы крупнее этого
 
@@ -128,7 +130,7 @@ func finish(parent: Node) -> void:
 		var instance := MeshInstance3D.new()
 		instance.mesh = mesh
 		if key.z & 1:  # мелочи
-			instance.visibility_range_end = DETAIL_RANGE
+			instance.visibility_range_end = DETAIL_RANGE + CELL_DETAIL * 0.7  # до центра куска — плюс полдиагонали
 			instance.visibility_range_end_margin = 20.0
 			instance.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED  # плавное проявление делает объект прозрачным — дорого; границу прячет туман
 			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -185,11 +187,13 @@ func _plain_bucket(mat: Material) -> Material:
 ## Ячейка сетки по центру детали и признак «мелочь» (тонкая или маленькая деталь).
 func _chunk_key(xform: Transform3D) -> Vector3i:
 	var p := xform.origin
-	var cell := CELL_NEAR if NEAR.has_point(Vector2(p.x, p.z)) else CELL_FAR
 	var s := xform.basis.get_scale()
 	var dims := [s.x, s.y, s.z]
 	dims.sort()
 	var detail := 1 if dims[1] < DETAIL_THIN or dims[2] < 2.5 else 0
+	var cell := CELL_NEAR if NEAR.has_point(Vector2(p.x, p.z)) else CELL_FAR
+	if detail:
+		cell = CELL_DETAIL
 	# Ближние и дальние ячейки разной величины: разводим их по разным ключам.
 	var far := 0 if cell == CELL_NEAR else 2
 	return Vector3i(floori(p.x / cell), floori(p.z / cell), detail + far)

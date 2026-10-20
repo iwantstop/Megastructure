@@ -17,6 +17,7 @@ const SPACING := 2.0         # метров между точками карты
 const MARGIN := 220.0        # поле вокруг горы, где склон уходит в бездну
 const REGION := 1024         # точек карты высот в регионе Terrain3D
 const ABYSS_CUT := -480.0    # ниже этой высоты склон обрывается дырой — дна у бездны нет
+const COLLISION_FLOOR := -900.0  # в коллизии на месте дыр — просто глубоко (игрок вернётся на тропу раньше)
 
 const THETA := LAPS * TAU
 const C := (R_BASE - R_TOP) / THETA  # насколько тропа приближается к центру на радиан
@@ -39,7 +40,9 @@ func _ready() -> void:
 	terrain.show_checkered = false
 	terrain.vertex_spacing = SPACING
 	terrain.change_region_size(REGION)
-	terrain.collision_mode = 3  # вся гора твёрдая сразу, а не только вокруг камеры
+	# Своя коллизия (см. _build_collision): у Terrain3D дыры в коллизии — это NaN, и физика игрока
+	# над ними тысячи раз в секунду пишет предупреждения — игра у горы зависала.
+	terrain.collision_mode = 0
 
 	# Terrain3D пишет карту высот с угла региона, поэтому карта покрывает регионы целиком:
 	# от угла до угла. Всё, что не гора (поле вокруг и низ обрыва), — «дыры» ландшафта,
@@ -60,16 +63,40 @@ func _ready() -> void:
 	var pz0 := maxi(int((CENTER.z - half - origin.z) / SPACING), 0)
 	var px1 := mini(int(ceilf((CENTER.x + half - origin.x) / SPACING)), width)
 	var pz1 := mini(int(ceilf((CENTER.z + half - origin.z) / SPACING)), depth)
+	var cols := px1 - px0
+	var rows := pz1 - pz0
+	var collision_heights := PackedFloat32Array()
+	collision_heights.resize(cols * rows)
 	for py in range(pz0, pz1):
 		for px in range(px0, px1):
 			var x := origin.x + px * SPACING
 			var z := origin.z + py * SPACING
 			var sample := _sample(x, z)
 			heights.set_pixel(px, py, Color(sample.x, 0, 0))
+			# Коллизия: там, где видна дыра, — просто очень глубоко, без NaN. Масштаб узла — SPACING.
+			collision_heights[(py - pz0) * cols + (px - px0)] = (sample.x if sample.x > ABYSS_CUT else COLLISION_FLOOR) / SPACING
 			colors.set_pixel(px, py, _color(sample.x, sample.y, x, z))
 			if sample.x > ABYSS_CUT:
 				control.set_pixel(px, py, Color(0, 0, 0))
 	terrain.data.import_images([heights, control, colors], origin, 0.0, 1.0)
+	_build_collision(collision_heights, cols, rows, origin + Vector3(px0 * SPACING, 0, pz0 * SPACING))
+
+
+## Твёрдая гора: карта высот как HeightMapShape3D. Форма центрирована и с шагом 1, поэтому
+## узел масштабирован в SPACING раз (равномерно — неравномерный масштаб физика не любит),
+## а высоты заранее поделены на SPACING.
+func _build_collision(data: PackedFloat32Array, cols: int, rows: int, corner: Vector3) -> void:
+	var shape := HeightMapShape3D.new()
+	shape.map_width = cols
+	shape.map_depth = rows
+	shape.map_data = data
+	var holder := CollisionShape3D.new()
+	holder.shape = shape
+	holder.scale = Vector3.ONE * SPACING
+	var body := StaticBody3D.new()
+	body.position = corner + Vector3((cols - 1) * SPACING / 2.0, 0, (rows - 1) * SPACING / 2.0)
+	body.add_child(holder)
+	add_child(body)
 
 
 ## Высота тропы на угле спирали theta: пропорциональна пройденному пути, поэтому уклон везде одинаковый.

@@ -76,7 +76,7 @@ func _ready() -> void:
 	var rain := _make_rain(player)
 	_make_ads(structures.ads)
 	_make_signs(structures.signs)
-	_make_holograms(structures.crossings)
+	_make_holograms(structures.open_hubs, Structures.L1)
 	var traffic = preload("res://scripts/traffic.gd").new()
 	traffic.setup(structures.streets, rng)
 	add_child(traffic)
@@ -557,7 +557,9 @@ func _make_signs(spots: Array[Dictionary]) -> void:
 
 
 ## Огромные голограммы над перекрёстками: медленно вращаются, светятся сквозь дождь.
-func _make_holograms(points: Array[Vector2]) -> void:
+## Каждую проецирует аппарат на площадке-хабе (deck_y) — от него вверх идёт слабый луч света,
+## поэтому голограмма не «висит в воздухе».
+func _make_holograms(points: Array[Vector2], deck_y: float) -> void:
 	var picks := points.duplicate()
 	picks.shuffle()
 	for i in mini(8, picks.size()):
@@ -569,6 +571,7 @@ func _make_holograms(points: Array[Vector2]) -> void:
 		var root := Node3D.new()
 		root.position = Vector3(p.x, rng.randf_range(35, 70), p.y)
 		add_child(root)
+		_hologram_projector(Vector3(p.x, deck_y, p.y), root.position.y, color)
 
 		var shape := MeshInstance3D.new()
 		if i % 2 == 0:
@@ -594,6 +597,49 @@ func _make_holograms(points: Array[Vector2]) -> void:
 		shape.material_override = mat
 		root.add_child(shape)
 		holograms.append(root)
+
+
+## Проектор голограммы на хабе: тёмная тумба со светящимся кольцом и луч света вверх до голограммы.
+func _hologram_projector(base: Vector3, top_y: float, color: Color) -> void:
+	var body := MeshInstance3D.new()
+	var drum := CylinderMesh.new()
+	drum.top_radius = 1.1
+	drum.bottom_radius = 1.4
+	drum.height = 1.2
+	body.mesh = drum
+	body.material_override = _plain(Color(0.06, 0.06, 0.07), 0.4, 0.6)
+	body.position = base + Vector3.UP * 0.6
+	add_child(body)
+	var lens := MeshInstance3D.new()
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.7
+	ring.outer_radius = 0.95
+	lens.mesh = ring
+	var glow := StandardMaterial3D.new()
+	glow.albedo_color = color
+	glow.emission_enabled = true
+	glow.emission = color
+	glow.emission_energy_multiplier = 4.0
+	lens.material_override = glow
+	lens.position = base + Vector3.UP * 1.22
+	add_child(lens)
+	# Луч: расширяется кверху, едва заметный — как пыль в свете проектора.
+	var beam_mat := ShaderMaterial.new()
+	beam_mat.shader = HOLOGRAM_SHADER
+	beam_mat.set_shader_parameter("color", color)
+	beam_mat.set_shader_parameter("intensity", 0.35)
+	var cone := CylinderMesh.new()
+	var height := top_y - 13.0 - (base.y + 1.2)  # до нижнего края голограммы
+	cone.top_radius = 6.0
+	cone.bottom_radius = 0.7
+	cone.height = height
+	cone.cap_top = false
+	cone.cap_bottom = false
+	var beam := MeshInstance3D.new()
+	beam.mesh = cone
+	beam.material_override = beam_mat
+	beam.position = base + Vector3.UP * (1.2 + height / 2.0)
+	add_child(beam)
 
 
 ## Горящие билборды: светящиеся панели с лозунгами, мерцают, освещают мокрые улицы.
