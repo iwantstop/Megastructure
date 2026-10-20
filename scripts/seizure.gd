@@ -12,6 +12,10 @@ const STOPS := [
 	{"at": -1950.0, "to": -2250.0, "line": "Закроются глаза..."},
 	# У подножия горы: подъём скучный и долгий — переносит почти к пещере.
 	{"path_at": 0.012, "path_to": Mountain.CAVE_AT - 0.014, "line": ""},
+	# Через 100 м после уступа, где ангел исчез («Прости меня...»), — ещё ближе к вершине, и над облаками — солнце.
+	# Доли тропы считаются в _ready (from_height + after_m → path_at, to_height → path_to).
+	{"from_height": 428.0, "after_m": 110.0, "to_height": Mountain.PEAK - 40.0, "reach": 10.0, "line": "",   # срабатывает за reach до точки — ~100 м
+		"story": "Поднявшись выше облаков, он впервые увидел солнце — его лучи, тёплые и живые, коснулись измождённого лица."},
 ]
 const PATH_REACH := 40.0    # насколько близко к точке на тропе надо подойти, м (с запасом — не проскочить)
 const DURATION := 1.2
@@ -32,6 +36,7 @@ var moved := false
 var prev_z := 0.0
 var held := false             # припадок отложен, пока на экране рассказ, — потом не пропускать его
 var rng := RandomNumberGenerator.new()
+var stops: Array = []         # STOPS с рассчитанными долями тропы
 
 var noise_player: AudioStreamPlayer
 var noise_playback: AudioStreamGeneratorPlayback
@@ -46,6 +51,11 @@ func setup(p_player: CharacterBody3D, p_screen: ShaderMaterial) -> void:
 
 func _ready() -> void:
 	rng.randomize()
+	stops = STOPS.duplicate(true)
+	for stop in stops:
+		if stop.has("from_height"):
+			stop.path_at = Mountain.fraction_after(Mountain.fraction_at_height(stop.from_height), stop.after_m)
+			stop.path_to = Mountain.fraction_at_height(stop.to_height)
 	prev_z = player.global_position.z
 	var generator := AudioStreamGenerator.new()
 	generator.mix_rate = MIX_RATE
@@ -88,24 +98,24 @@ func _watch() -> void:
 	# Пока посреди экрана рассказ (hud.narrate) — не перебивать его: припадок подождёт.
 	var hud := get_tree().get_first_node_in_group("hud")
 	if hud and hud.narration.modulate.a > 0.01:
-		held = held or (next_stop < STOPS.size() and STOPS[next_stop].has("at") and z <= STOPS[next_stop].at)
+		held = held or (next_stop < stops.size() and stops[next_stop].has("at") and z <= stops[next_stop].at)
 		prev_z = z
 		return
-	if held and next_stop < STOPS.size() and absf(player.global_position.x) < ON_BRIDGE and not player.locked and not player.flying:
+	if held and next_stop < stops.size() and absf(player.global_position.x) < ON_BRIDGE and not player.locked and not player.flying:
 		held = false
 		_start(next_stop)
 		prev_z = z
 		return
 	held = false
-	if next_stop < STOPS.size() and not player.flying and not player.locked:
-		var stop: Dictionary = STOPS[next_stop]
+	if next_stop < stops.size() and not player.flying and not player.locked:
+		var stop: Dictionary = stops[next_stop]
 		if stop.has("path_at"):
 			# Точка на тропе горы: подошёл к ней — припадок; уже выше — считается пройденной.
 			var spot := Mountain.path_point(stop.path_at).origin
 			var p := player.global_position
 			if p.y > spot.y + 30.0:
 				next_stop += 1
-			elif Vector2(p.x - spot.x, p.z - spot.z).length() < PATH_REACH and absf(p.y - spot.y) < 12.0:
+			elif Vector2(p.x - spot.x, p.z - spot.z).length() < stop.get("reach", PATH_REACH) and absf(p.y - spot.y) < 12.0:
 				_start(next_stop)
 		elif z < stop.at - ZONE:
 			next_stop += 1
@@ -118,7 +128,7 @@ func _watch() -> void:
 func trigger_now() -> void:
 	if active != -2:
 		return
-	var on_bridge := absf(player.global_position.x) < ON_BRIDGE and next_stop < STOPS.size()
+	var on_bridge := absf(player.global_position.x) < ON_BRIDGE and next_stop < stops.size()
 	_start(next_stop if on_bridge else -1)
 
 
@@ -151,7 +161,7 @@ func _tear(strength: float, delta: float) -> void:
 func _move() -> void:
 	if active < 0:
 		return
-	var stop: Dictionary = STOPS[active]
+	var stop: Dictionary = stops[active]
 	# Вперёд, но не назад (если, пока ждал рассказа, ушёл дальше точки переноса).
 	var spot := Vector3(clampf(player.global_position.x, -9.0, 9.0), 0.3, minf(stop.get("to", 0.0), player.global_position.z))
 	var yaw := 0.0
@@ -173,7 +183,8 @@ func _finish() -> void:
 	screen.set_shader_parameter("blackout", 0.0)
 	noise_player.stop()
 	player.locked = false
-	var line: String = STOPS[active].line if active >= 0 else STOPS[mini(next_stop, STOPS.size() - 1)].line
+	var line: String = stops[active].line if active >= 0 else stops[mini(next_stop, stops.size() - 1)].line
+	var story: String = stops[active].get("story", "") if active >= 0 else ""
 	if active >= 0:
 		next_stop = active + 1
 	active = -2
@@ -181,6 +192,8 @@ func _finish() -> void:
 	var hud := get_tree().get_first_node_in_group("hud")
 	if hud and line != "":
 		hud.say(line)
+	if hud and story != "":
+		hud.narrate(story)
 
 
 ## Цифровой треск: шум с «залипанием» отсчётов (как битый сигнал), в черноте — тишина.

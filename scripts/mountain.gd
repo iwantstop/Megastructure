@@ -207,6 +207,23 @@ static func fraction_at_height(h: float) -> float:
 	return (lo + hi) / 2.0
 
 
+## Доля подъёма на meters метров дальше по тропе от доли fraction. Длина пути пропорциональна _arc
+## (и по горизонтали, и по высоте — уклон везде одинаковый).
+static func fraction_after(fraction: float, meters: float) -> float:
+	var full := _arc(THETA)
+	var length := sqrt(full * full + PEAK * PEAK)
+	var target := _arc(fraction * THETA) / full + meters / length
+	var lo := fraction
+	var hi := 1.0
+	for i in 30:
+		var mid := (lo + hi) / 2.0
+		if _arc(mid * THETA) / full < target:
+			lo = mid
+		else:
+			hi = mid
+	return (lo + hi) / 2.0
+
+
 ## Каменная текстура (без неё Terrain3D рисует отладочную шахматную клетку):
 ## светлый зернистый камень — цвет даёт карта цветов горы. Альфа альбедо — высота рельефа,
 ## альфа нормалей — шероховатость (так Terrain3D хранит эти каналы).
