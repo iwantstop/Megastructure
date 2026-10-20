@@ -43,11 +43,14 @@ var seen_time := 0.0
 var noticed := false
 var farewell := Farewell.NONE
 var farewell_done := false
+var finale_mode := false       # финал: фигуру больше ничто не прячет
+var farewell_tween: Tween
 var rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
 	rng.randomize()
+	add_to_group("presence")
 	mat = StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -118,6 +121,7 @@ func _farewell_step(delta: float) -> void:
 				to_hero.y = 0
 				var turned := Basis.looking_at(to_hero.normalized(), Vector3.UP)
 				var tween := create_tween()
+				farewell_tween = tween
 				tween.tween_method(func(k: float) -> void:
 					figure.basis = Basis(figure.basis.get_rotation_quaternion().slerp(turned.get_rotation_quaternion(), k)), 0.0, 1.0, FAREWELL_TURN).set_trans(Tween.TRANS_SINE)
 				tween.tween_interval(FAREWELL_LOOK)
@@ -132,11 +136,29 @@ func _farewell_step(delta: float) -> void:
 					motif.play())
 				tween.tween_property(mat, "albedo_color:a", 0.0, FAREWELL_DISSOLVE).set_trans(Tween.TRANS_SINE)
 				tween.tween_callback(func() -> void:
-					figure.visible = false
+					if not finale_mode:
+						figure.visible = false
 					farewell = Farewell.GONE
 					farewell_done = true)
 		_:
 			pass
+
+
+## Финал: она появляется в последний раз — на вершине, перед героем, со стороны солнца, лицом к нему.
+func finale_appear(feet: Vector3, hero: Vector3) -> void:
+	finale_mode = true
+	if farewell_tween:
+		farewell_tween.kill()      # недоигранное прощание не должно спрятать её
+	farewell = Farewell.GONE      # обычные появления и прощание больше ничего не трогают
+	farewell_done = true
+	fading = true
+	var to_hero := hero - feet
+	to_hero.y = 0
+	figure.global_transform = Transform3D(Basis.looking_at(to_hero.normalized(), Vector3.UP), feet)
+	figure.visible = true
+	anim.play("Idle")
+	mat.albedo_color.a = 0.0
+	create_tween().tween_property(mat, "albedo_color:a", 1.0, 2.0).set_trans(Tween.TRANS_SINE)
 
 
 ## Вызов из админ-панели.
@@ -265,6 +287,8 @@ func _fade_out() -> void:
 
 
 func _on_faded() -> void:
+	if finale_mode:
+		return
 	figure.visible = false
 	fading = false
 	timer = rng.randf_range(INTERVAL.x, INTERVAL.y)

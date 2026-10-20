@@ -95,6 +95,7 @@ func _build() -> void:
 	var mats := _make_materials()
 	_make_environment()
 	var sun := _make_sun()
+	sun.add_to_group("sun")  # финал: солнце взрывается за ангелом
 	var bodycam := _make_bodycam()
 
 	_mark("материалы и окружение")
@@ -174,6 +175,9 @@ func _build() -> void:
 	seizure.setup(player, bodycam.get_child(0).material)
 	if not scripted:
 		add_child(seizure)  # в демо и бенчмарке героя переносят скриптом — припадки помешали бы
+		var flashback = preload("res://scripts/flashback.gd").new()  # выход из пещеры: падение с небоскрёба
+		flashback.setup(player, bodycam.get_child(0).material)
+		add_child(flashback)
 
 	var admin = preload("res://scripts/admin.gd").new()
 	admin.setup({"player": player, "dream": dream, "presence": presence, "env": env, "bodycam": bodycam,

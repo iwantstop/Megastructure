@@ -17,6 +17,7 @@ enum State { IDLE, TAKING, WAIT_STRIKE, LIGHTING, SMOKING, UNLIT, BUSY }
 
 const PACK_SIZE := 10
 const STRIKE_CHANCE := 0.5
+const SHOW_HANDS := false         # руки выключены: ждём модель рук с костями (код рук ниже — готов)
 const TREMOR_TIME := 120.0        # за столько секунд дрожь после припадка стихает
 const FILTER_LEN := 0.025
 const PAPER_LEN := 0.058
@@ -83,8 +84,9 @@ func _ready() -> void:
 	_build_pack()
 	_build_cigarette()
 	_build_lighter()
-	arm_r = _build_arm(true)
-	arm_l = _build_arm(false)
+	if SHOW_HANDS:
+		arm_r = _build_arm(true)
+		arm_l = _build_arm(false)
 	_build_smoke()
 	_build_sounds()
 	pack.visible = false
@@ -112,7 +114,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	_hands(delta)
+	if SHOW_HANDS:
+		_hands(delta)
 	# Дрожь после припадка: весь «набор в руках» мелко трясётся и медленно успокаивается.
 	tremor = move_toward(tremor, 0.0, delta / TREMOR_TIME)
 	var ms := Time.get_ticks_msec() * 0.001

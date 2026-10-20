@@ -1,6 +1,6 @@
 extends Node
 
-## Припадки на мосту. Пока герой идёт к горе, в определённых точках его «накрывает»: резко,
+## Припадки на мосту и у подножия горы. Пока герой идёт к горе, в определённых точках его «накрывает»: резко,
 ## на 1,2 секунды кадр рвётся помехами и цифровым треском, на миг — чернота, и он приходит в себя
 ## уже намного ближе к горе. После каждого припадка внизу плавно проступают его мысли.
 ## Так мост (2 км) проходится за полторы минуты, а переход к финалу становится событием.
@@ -10,12 +10,15 @@ const STOPS := [
 	{"at": -650.0, "to": -1150.0, "line": "Скоро это закончится..."},
 	{"at": -1300.0, "to": -1800.0, "line": "Возможно именно сегодня..."},
 	{"at": -1950.0, "to": -2250.0, "line": "Закроются глаза..."},
+	# У подножия горы: подъём скучный и долгий — переносит почти к пещере.
+	{"path_at": 0.012, "path_to": Mountain.CAVE_AT - 0.014, "line": ""},
 ]
+const PATH_REACH := 40.0    # насколько близко к точке на тропе надо подойти, м (с запасом — не проскочить)
 const DURATION := 1.2
 const BLACK_FROM := 0.5     # с этого момента — чернота, в ней перенос
 const BLACK_TO := 0.7
-const ON_BRIDGE := 13.0     # |x| меньше этого — герой на мосту
-const ZONE := 60.0          # припадок срабатывает в этих метрах после точки
+const ON_BRIDGE := 16.0     # |x| меньше этого — герой на мосту (весь настил до перил)
+const ZONE := 120.0         # припадок срабатывает в этих метрах после точки — бегом не проскочить
 const MIX_RATE := 22050.0
 
 var player: CharacterBody3D
@@ -83,7 +86,15 @@ func _watch() -> void:
 	var z := player.global_position.z
 	if next_stop < STOPS.size() and not player.flying and not player.locked:
 		var stop: Dictionary = STOPS[next_stop]
-		if z < stop.at - ZONE:
+		if stop.has("path_at"):
+			# Точка на тропе горы: подошёл к ней — припадок; уже выше — считается пройденной.
+			var spot := Mountain.path_point(stop.path_at).origin
+			var p := player.global_position
+			if p.y > spot.y + 30.0:
+				next_stop += 1
+			elif Vector2(p.x - spot.x, p.z - spot.z).length() < PATH_REACH and absf(p.y - spot.y) < 12.0:
+				_start(next_stop)
+		elif z < stop.at - ZONE:
 			next_stop += 1
 		elif z <= stop.at and prev_z - z < 5.0 and absf(player.global_position.x) < ON_BRIDGE:
 			_start(next_stop)
@@ -128,12 +139,18 @@ func _move() -> void:
 	if active < 0:
 		return
 	var stop: Dictionary = STOPS[active]
-	var spot := Vector3(clampf(player.global_position.x, -9.0, 9.0), 0.3, stop.to)
+	var spot := Vector3(clampf(player.global_position.x, -9.0, 9.0), 0.3, stop.get("to", 0.0))
+	var yaw := 0.0
+	if stop.has("path_to"):
+		var on_path := Mountain.path_point(stop.path_to)
+		var forward := -on_path.basis.z
+		spot = on_path.origin + Vector3.UP * 0.3
+		yaw = atan2(-forward.x, -forward.z)   # лицом вверх по тропе
 	player.global_position = spot
 	player.velocity = Vector3.ZERO
 	player.last_safe = spot
-	player.rotation.y = 0.0
-	player.target_yaw = 0.0
+	player.rotation.y = yaw
+	player.target_yaw = yaw
 
 
 func _finish() -> void:
@@ -148,7 +165,7 @@ func _finish() -> void:
 	active = -2
 	prev_z = player.global_position.z
 	var hud := get_tree().get_first_node_in_group("hud")
-	if hud:
+	if hud and line != "":
 		hud.say(line)
 
 
