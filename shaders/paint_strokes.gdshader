@@ -15,7 +15,8 @@ uniform sampler2D normal_texture : hint_normal_roughness_texture, filter_nearest
 uniform float amount = 0.13;        // сила мазков (доля яркости)
 uniform float stroke_near = 0.16;   // длина штриха вблизи (на 6 м), м — шире фильтра Кувахары, иначе он их сглаживает
 uniform float aspect = 3.0;         // штрих длиннее, чем шире
-uniform float fade_far = 900.0;     // дальше мазки тают (там всё равно туман)
+uniform float fade_start = 30.0;    // до этого расстояния мазки в полную силу, м
+uniform float fade_end = 140.0;     // к этому расстоянию мазки исчезают — вдали силуэты в тумане чистые
 
 float hash(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -59,7 +60,7 @@ void fragment() {
 		float step0 = floor(level);
 		float size0 = stroke_near * exp2(step0);
 		float s = mix(surface_strokes(world, n, size0), surface_strokes(world, n, size0 * 2.0), fract(level));
-		float fade = 1.0 - smoothstep(fade_far * 0.6, fade_far, dist);
+		float fade = 1.0 - smoothstep(fade_start, fade_end, dist);
 		ALBEDO = vec3(1.0 + s * amount * 2.0 * fade);
 	}
 	ALPHA = 1.0;
