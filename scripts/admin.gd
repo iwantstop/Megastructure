@@ -3,7 +3,9 @@ extends CanvasLayer
 ## Админ-панель. F1 — открыть/закрыть, F — быстро включить/выключить полёт.
 
 const START := Vector3(4, 0.2, 86)
+const BODYCAM_PARAMS := ["distortion", "aberration", "vignette", "grain"]
 
+var bodycam_base := {}   # исходные значения параметров бодикамеры (для регулятора)
 var player: CharacterBody3D
 var dream: Node
 var presence: Node
@@ -56,6 +58,8 @@ func _ready() -> void:
 	fly_box = _check(box, "Полёт (F)  — Space вверх, Ctrl вниз", func(on: bool) -> void: player.set_flying(on))
 	_check(box, "Сквозь стены", func(on: bool) -> void: player.set_noclip(on))
 	_check(box, "Эффект бодикамеры", func(on: bool) -> void: bodycam.visible = on).button_pressed = true
+	_slider(box, "Бодикамера (линза, зерно, виньетка): 0 — нет, 100 — как задумано", 0, 200, 100, _on_bodycam_strength)
+	_slider(box, "Покачивание при ходьбе: 0 — нет, 100 — как задумано", 0, 200, 100, func(v: float) -> void: player.bob_scale = v / 100.0)
 	_check(box, "Живопись (мазки и гамма зоны)", _on_paint).button_pressed = true
 	_check(box, "Глобальное освещение (тяжёлое)", func(on: bool) -> void: env.sdfgi_enabled = on).button_pressed = true
 	_slider(box, "Скорость полёта", 5, 200, player.fly_speed, func(v: float) -> void: player.fly_speed = v)
@@ -70,6 +74,18 @@ func _ready() -> void:
 	_button(box, "К началу тропы на гору", func() -> void: _teleport(Mountain.path_point(0.0)))
 	_button(box, "На тропу над облаками", func() -> void: _teleport(Mountain.path_point(0.85)))
 	_button(box, "Финал на вершине", _to_finale)
+
+
+## Сила бодикамеры: искажение линзы, расслоение цвета, виньетка и зерно — от исходных значений шейдера
+## (100% — как задумано, 0% — чистая картинка, 200% — вдвое сильнее).
+func _on_bodycam_strength(v: float) -> void:
+	var mat := (bodycam.get_child(0) as ColorRect).material as ShaderMaterial
+	for param in BODYCAM_PARAMS:
+		if not bodycam_base.has(param):
+			bodycam_base[param] = mat.get_shader_parameter(param)
+			if bodycam_base[param] == null:
+				bodycam_base[param] = RenderingServer.shader_get_parameter_default(mat.shader.get_rid(), param)
+		mat.set_shader_parameter(param, bodycam_base[param] * v / 100.0)
 
 
 func _on_paint(on: bool) -> void:

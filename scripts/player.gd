@@ -27,6 +27,7 @@ var locked := false   # во вступлении: осматриваться м
 var lying := 0.0      # 1 — лежит на спине и смотрит в небо, 0 — стоит
 var kneeling := 0.0   # 1 — стоит на коленях (финал на вершине)
 var fall_shake := 0.0  # тряска от встречного ветра при падении (вступление)
+var bob_scale := 1.0   # покачивание при ходьбе (админ-панель): 1 — как задумано, 0 — нет
 var panic := 0.0       # паника в падении: крупная дрожь, кувырок по крену, шире обзор (вступление)
 var panic_look := Vector2.ZERO  # резкие рывки головы в панике: x — вбок, y — вверх-вниз, рад
 
@@ -201,7 +202,7 @@ func _process(delta: float) -> void:
 	var stride := lerpf(3.4, 5.2, run)
 	if grounded:
 		step_phase += flat_speed * delta * TAU / stride
-	var amp := minf(walk_amount, 1.0) + maxf(walk_amount - 1.0, 0.0) * 0.2
+	var amp := (minf(walk_amount, 1.0) + maxf(walk_amount - 1.0, 0.0) * 0.2) * bob_scale
 
 	# Лёгкий наклон в сторону поворота: чем быстрее поворачиваешь, тем сильнее, но не больше 2°.
 	var tilt_target := clampf(-yaw_gap * 0.25 * ROLL_STRENGTH, -0.035 * ROLL_STRENGTH, 0.035 * ROLL_STRENGTH)
