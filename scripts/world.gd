@@ -50,6 +50,7 @@ func _ready() -> void:
 	# Пролог — только в настоящей игре: в скриптовых режимах (демо, бенчмарк, карта) и тестах (-s) его нет.
 	var args := OS.get_cmdline_user_args()
 	var plain_game := not ("--demo" in args or "--bench" in args or "--map" in args) and not ("-s" in OS.get_cmdline_args() or "--script" in OS.get_cmdline_args())
+	plain_game = plain_game or "--prologue" in args   # тест пролога (tests/prologue_view.gd)
 	if plain_game:
 		var prologue = preload("res://scripts/prologue.gd").new()
 		add_child(prologue)
