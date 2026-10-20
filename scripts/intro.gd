@@ -3,7 +3,7 @@ extends Node
 ## Вступление: герой лежит на спине у подножия самой высокой башни, с которой прыгнул,
 ## и смотрит в тучи. Мимо пробегают крысы. Осмотреться можно мышью; по W он медленно поднимается.
 
-const GET_UP_TIME := 3.5
+const GET_UP_TIME := 4.5
 
 var player: CharacterBody3D
 var layer: CanvasLayer
@@ -43,7 +43,7 @@ func _ready() -> void:
 
 	rat_mat.albedo_color = Color(0.08, 0.07, 0.07)
 	rat_mat.roughness = 0.6
-	for i in 4:
+	for i in 12:
 		_rat(i)
 
 
