@@ -47,6 +47,20 @@ const NEON_COLORS := [
 ## Экран загрузки: мир строится несколько секунд — пусть это время будет чёрным экраном
 ## с названием истории, а не заставкой движка. Потом экран тает прямо в падение.
 func _ready() -> void:
+	# Пролог — только в настоящей игре: в скриптовых режимах (демо, бенчмарк, карта) и тестах (-s) его нет.
+	var args := OS.get_cmdline_user_args()
+	var plain_game := not ("--demo" in args or "--bench" in args or "--map" in args) and not ("-s" in OS.get_cmdline_args() or "--script" in OS.get_cmdline_args())
+	if plain_game:
+		var prologue = preload("res://scripts/prologue.gd").new()
+		add_child(prologue)
+		await prologue.title_shown        # название проявилось — теперь можно надолго занять поток постройкой
+		_build()
+		built = true
+		get_tree().paused = true           # падение не начинается, пока не дочитан пролог
+		prologue.play_text()
+		await prologue.finished
+		get_tree().paused = false
+		return
 	var loading := _make_loading_screen()
 	# Дать кадру с экраном загрузки отрисоваться: постройка мира займёт главный поток.
 	await get_tree().process_frame
