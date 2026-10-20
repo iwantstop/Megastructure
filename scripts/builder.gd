@@ -5,7 +5,8 @@ extends RefCounted
 ## Так огромный мир рисуется быстро.
 
 var body := StaticBody3D.new()
-var _tools := {}
+var _pieces := {}  # материал -> куски [вершины, нормали]
+var _shapes := {}  # заготовка -> её треугольники из памяти
 var _unit_box := BoxMesh.new()
 var _unit_cylinder := CylinderMesh.new()
 var _unit_rod := CylinderMesh.new()
@@ -71,10 +72,23 @@ func collider_box(center: Vector3, size: Vector3, basis := Basis.IDENTITY) -> vo
 	_add_collision(shape, Transform3D(basis, center))
 
 
+## Склеивает накопленные куски в один меш: по поверхности на материал.
 func finish(parent: Node) -> void:
 	var mesh := ArrayMesh.new()
-	for mat in _tools:
-		var st: SurfaceTool = _tools[mat]
+	for mat in _pieces:
+		var verts := PackedVector3Array()
+		var norms := PackedVector3Array()
+		for piece in _pieces[mat]:
+			verts.append_array(piece[0])
+			norms.append_array(piece[1])
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		arrays[Mesh.ARRAY_NORMAL] = norms
+		# Склеиваем одинаковые вершины: так видеокарте втрое меньше работы.
+		var st := SurfaceTool.new()
+		st.create_from_arrays(arrays)
+		st.index()
 		st.commit(mesh)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, mat)
 	var instance := MeshInstance3D.new()
@@ -83,12 +97,35 @@ func finish(parent: Node) -> void:
 	parent.add_child(body)
 
 
+## Деталь = форма-заготовка, сдвинутая и повёрнутая. Форму берём один раз из памяти
+## (а не у видеокарты — такой запрос на каждую из десятков тысяч деталей занимал минуты),
+## дальше только преобразуем её вершины. Куски копятся в обычном массиве и склеиваются в finish.
 func _append(source: Mesh, xform: Transform3D, mat: Material) -> void:
-	if not _tools.has(mat):
-		var st := SurfaceTool.new()
-		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		_tools[mat] = st
-	_tools[mat].append_from(source, 0, xform)
+	var shape := _shape(source)
+	var normal_xform := Transform3D(xform.basis.inverse().transposed(), Vector3.ZERO)
+	if not _pieces.has(mat):
+		_pieces[mat] = []
+	_pieces[mat].append([xform * shape[0], normal_xform * shape[1]])
+
+
+## Вершины и нормали заготовки треугольниками подряд (без индексов), из памяти, один раз.
+func _shape(source: Mesh) -> Array:
+	if not _shapes.has(source):
+		var arrays: Array = (source as PrimitiveMesh).get_mesh_arrays()
+		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var index: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		var verts := PackedVector3Array()
+		var norms := PackedVector3Array()
+		if index.is_empty():
+			verts = v
+			norms = n
+		else:
+			for i in index:
+				verts.append(v[i])
+				norms.append(n[i])
+		_shapes[source] = [verts, norms]
+	return _shapes[source]
 
 
 func _add_collision(shape: Shape3D, xform: Transform3D) -> void:

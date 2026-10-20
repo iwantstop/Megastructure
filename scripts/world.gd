@@ -22,6 +22,7 @@ var fog_volume: FogVolume
 var fog_origin := Vector3(0, 10, -150)
 var searchlights: Array[SpotLight3D] = []
 var lifts: Array[Node3D] = []
+var _last_mark := 0
 var time := 0.0
 var shared_noise: NoiseTexture2D
 var neon: Array[StandardMaterial3D] = []
@@ -47,17 +48,23 @@ func _ready() -> void:
 	var sun := _make_sun()
 	var bodycam := _make_bodycam()
 
+	_mark("материалы и окружение")
+
 	var builder := Builder.new()
 	var structures := Structures.new(builder, rng, mats)
 	structures.build()
+	_mark("генерация построек")
 	var mannequins := Mannequins.new(builder, rng, mats.plastic, mats.concrete)
 	mannequins.populate(structures.streets, structures.plazas, structures.decks, Structures.L1, structures.has_floor)
+	_mark("манекены")
 	builder.finish(self)
+	_mark("сборка меша и коллизий")
 	_make_elevators(structures.elevators, mats)
 
 	var props := Props.new(rng)
 	var vignettes := props.place_all(self, structures)
 	_make_window_lights(structures.lights)
+	_mark("лифты, вещи, свет")
 
 	var player := _spawn_player()
 	var rain := _make_rain(player)
@@ -96,10 +103,19 @@ func _ready() -> void:
 		"journey": journey, "intro": intro})
 	add_child(admin)
 
+	_mark("всё остальное")
+
 	if "--demo" in OS.get_cmdline_user_args():
 		var demo = preload("res://scripts/demo.gd").new()
 		demo.setup(player, intro, structures.access_points, lifts)
 		add_child(demo)
+
+
+## Пишет в лог, сколько занял очередной этап постройки мира.
+func _mark(stage: String) -> void:
+	var now := Time.get_ticks_msec()
+	print("[мир] %s: %d мс (всего %d мс)" % [stage, now - _last_mark, now])
+	_last_mark = now
 
 
 # --- Материалы ---------------------------------------------------------------
