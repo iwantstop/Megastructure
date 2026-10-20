@@ -11,6 +11,7 @@ var env: Environment
 var bodycam: CanvasLayer
 var journey: Node
 var intro: Node
+var finale: Node
 var panel: PanelContainer
 var fps_label: Label
 var fly_box: CheckBox
@@ -25,6 +26,7 @@ func setup(refs: Dictionary) -> void:
 	bodycam = refs.bodycam
 	journey = refs.journey
 	intro = refs.intro
+	finale = refs.finale
 
 
 func _ready() -> void:
@@ -62,6 +64,25 @@ func _ready() -> void:
 	_button(box, "Вырастить шпиль", func() -> void: dream.show_spire())
 	_button(box, "Подняться на 100 м", _rise)
 	_button(box, "Вернуться на старт", _to_start)
+	_button(box, "К началу тропы на гору", func() -> void: _teleport(Mountain.path_point(0.0)))
+	_button(box, "На тропу над облаками", func() -> void: _teleport(Mountain.path_point(0.85)))
+	_button(box, "Финал на вершине", _to_finale)
+
+
+## Ставит героя на тропу лицом вперёд по ней.
+func _teleport(xform: Transform3D) -> void:
+	fly_box.button_pressed = false
+	player.global_position = xform.origin + Vector3.UP * 0.5
+	player.velocity = Vector3.ZERO
+	player.last_safe = player.global_position
+	var forward := -xform.basis.z
+	player.target_yaw = atan2(-forward.x, -forward.z)
+	player.target_pitch = 0.0
+
+
+func _to_finale() -> void:
+	_teleport(Transform3D(Basis.IDENTITY, Mountain.CENTER + Vector3(0, Mountain.PEAK, 0)))
+	finale.start()
 
 
 func _on_manual_journey(on: bool) -> void:

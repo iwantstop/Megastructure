@@ -4,8 +4,10 @@ extends Node3D
 ## и стоит только в стороне горы — будто зовёт туда. Появляется, лишь когда смотришь к горе.
 ## Если подойти ближе — тихо растворяется. Чем дольше идёшь, тем чаще она появляется.
 
-const MOUNTAIN := Vector3(0, 0, -4600)
+const MOUNTAIN := Vector3(0, 0, -2870)
 const LOOK_CONE := 0.9  # радиан: насколько взгляд должен быть направлен к горе
+const GONE_ABOVE := 380.0  # выше облаков ангела больше нет — его никогда и не было
+const MODEL := preload("res://assets/characters/animation_library/AnimationLibrary_Godot_Standard.glb")
 
 const FIRST_APPEAR := 45.0   # секунд до первого появления
 const VANISH_DISTANCE := 28.0
@@ -13,6 +15,7 @@ const LIFETIME := 60.0       # сколько она стоит, если к н�
 const FADE_TIME := 2.5
 
 var figure: Node3D
+var anim: AnimationPlayer
 var mat: StandardMaterial3D
 var player: CharacterBody3D
 var timer := FIRST_APPEAR
@@ -42,11 +45,11 @@ func _process(delta: float) -> void:
 
 	if figure.visible:
 		visible_time += delta
-		figure.rotation.z = sin(visible_time * 0.7) * 0.01  # еле заметно покачивается
 		var dist := figure.global_position.distance_to(player.global_position)
-		if not fading and (dist < VANISH_DISTANCE or visible_time > LIFETIME):
+		var gone := player.global_position.y > GONE_ABOVE
+		if not fading and (dist < VANISH_DISTANCE or visible_time > LIFETIME or gone):
 			_fade_out()
-	else:
+	elif player.global_position.y < GONE_ABOVE:
 		timer -= delta
 		if timer <= 0.0:
 			_try_appear()
@@ -95,15 +98,21 @@ func _try_appear() -> void:
 	figure.look_at(feet + away, Vector3.UP)  # смотрит вдаль, не на игрока
 	figure.visible = true
 	visible_time = 0.0
+	anim.play("Idle")  # стоит и дышит
+	anim.seek(rng.randf() * anim.current_animation_length, true)
 	mat.albedo_color.a = 0.0
 	create_tween().tween_property(mat, "albedo_color:a", 1.0, FADE_TIME)
 
 
+## Уходит прочь — дальше от героя — и растворяется на ходу.
 func _fade_out() -> void:
 	fading = true
-	var tween := create_tween()
+	anim.play("Walk", 0.5)
+	var away := -figure.global_transform.basis.z
+	var tween := create_tween().set_parallel()
 	tween.tween_property(mat, "albedo_color:a", 0.0, FADE_TIME)
-	tween.tween_callback(_on_faded)
+	tween.tween_property(figure, "global_position", figure.global_position + away * 3.0, FADE_TIME)
+	tween.chain().tween_callback(_on_faded)
 
 
 func _on_faded() -> void:
@@ -115,33 +124,41 @@ func _on_faded() -> void:
 
 # --- Силуэт ------------------------------------------------------------------
 
+## Модель манекена из библиотеки анимаций: стройнее и чуть ниже, вся — тёмный силуэт.
+## Каре и юбка прикреплены к костям головы и таза, поэтому двигаются вместе с ней.
 func _build_figure() -> Node3D:
 	var root := Node3D.new()
-	# Ноги.
-	_part(root, _capsule(0.055, 0.86), Vector3(-0.07, 0.43, 0), 0.025)
-	_part(root, _capsule(0.055, 0.86), Vector3(0.075, 0.43, 0.02), -0.01)
-	# Платье до колен, чуть расширяется книзу.
-	_part(root, _cone(0.12, 0.21, 0.48), Vector3(0, 0.79, 0), 0.0, Vector3(1, 1, 0.75))
-	# Корпус: узкая талия, плечи.
-	_part(root, _cone(0.155, 0.105, 0.42), Vector3(0, 1.21, 0), 0.0, Vector3(1, 1, 0.6))
-	# Руки вдоль тела.
-	_part(root, _capsule(0.035, 0.62), Vector3(-0.175, 1.11, 0), 0.07)
-	_part(root, _capsule(0.035, 0.62), Vector3(0.175, 1.11, 0), -0.07)
-	# Шея и голова.
-	_part(root, _cone(0.035, 0.035, 0.1), Vector3(0, 1.46, 0))
-	_part(root, _sphere(0.095), Vector3(0, 1.565, 0), 0.0, Vector3(0.9, 1.1, 1))
-	# Каре: макушка и ровно обрезанные волосы до линии подбородка.
-	_part(root, _sphere(0.108), Vector3(0, 1.58, 0.012))
-	_part(root, _cone(0.106, 0.118, 0.13), Vector3(0, 1.5, 0.015))
+	var body: Node3D = MODEL.instantiate()
+	body.rotation.y = PI  # модель смотрит в +Z, а у нас «вперёд» — это -Z
+	body.scale = Vector3(0.86, 0.95, 0.82)
+	root.add_child(body)
+	for mesh in body.find_children("*", "MeshInstance3D", true, false):
+		mesh.material_override = mat
+	anim = body.find_child("AnimationPlayer", true, false)
+	for looped in ["Idle", "Walk"]:
+		anim.get_animation(looped).loop_mode = Animation.LOOP_LINEAR
+
+	var skeleton: Skeleton3D = body.find_child("Skeleton3D", true, false)
+	var head := _attach(skeleton, "DEF-head")
+	_part(head, _sphere(0.118), Vector3(0, 0.13, -0.01))                       # макушка
+	_part(head, _cone(0.118, 0.13, 0.15), Vector3(0, 0.07, -0.012))            # ровный срез каре
+	var hips := _attach(skeleton, "DEF-hips")
+	_part(hips, _cone(0.13, 0.24, 0.5), Vector3(0, -0.22, 0), Vector3(1, 1, 0.8))  # юбка до колен
 	return root
 
 
-func _part(root: Node3D, mesh: Mesh, pos: Vector3, tilt := 0.0, size_scale := Vector3.ONE) -> void:
+func _attach(skeleton: Skeleton3D, bone: String) -> Node3D:
+	var attachment := BoneAttachment3D.new()
+	attachment.bone_name = bone
+	skeleton.add_child(attachment)
+	return attachment
+
+
+func _part(root: Node3D, mesh: Mesh, pos: Vector3, size_scale := Vector3.ONE) -> void:
 	var part := MeshInstance3D.new()
 	part.mesh = mesh
 	part.material_override = mat
 	part.position = pos
-	part.rotation.z = tilt
 	part.scale = size_scale
 	root.add_child(part)
 

@@ -54,15 +54,21 @@ func _ready() -> void:
 	var structures := Structures.new(builder, rng, mats)
 	structures.build()
 	_mark("генерация построек")
-	var mannequins := Mannequins.new(builder, rng, mats.plastic, mats.concrete)
+	var mannequins := Mannequins.new(builder, rng, mats.concrete)
 	mannequins.populate(structures.streets, structures.plazas, structures.decks, Structures.L1, structures.has_floor)
-	_mark("манекены")
 	builder.finish(self)
 	_mark("сборка меша и коллизий")
+	var crowd = preload("res://scripts/crowd.gd").new()
+	add_child(crowd)
+	crowd.setup(mannequins.figures, mats.plastic)
+	_mark("манекены")
 	_make_elevators(structures.elevators, mats)
 
 	var props := Props.new(rng)
 	var vignettes := props.place_all(self, structures)
+	for v in vignettes:
+		for g in v.find_children("*", "GeometryInstance3D", true, false):
+			_limit_range(g, 150.0)
 	_make_window_lights(structures.lights)
 	_mark("лифты, вещи, свет")
 
@@ -75,7 +81,9 @@ func _ready() -> void:
 	traffic.setup(structures.streets, rng)
 	add_child(traffic)
 	_make_searchlights()
-	var mountain_mat := _make_mountain()
+	var mountain = preload("res://scripts/mountain.gd").new()
+	add_child(mountain)
+	_mark("гора")
 	var clouds_mat := _make_clouds()
 
 	var dream = preload("res://scripts/dream.gd").new()
@@ -91,23 +99,32 @@ func _ready() -> void:
 
 	var journey = preload("res://scripts/journey.gd").new()
 	journey.setup({"player": player, "sun": sun, "sky": sky_mat, "env": env, "rain": rain, "ambient": ambient,
-		"bodycam_mat": bodycam.get_child(0).material, "fog": fog_volume.material,
-		"mountain_mat": mountain_mat, "clouds_mat": clouds_mat})
+		"bodycam_mat": bodycam.get_child(0).material, "fog": fog_volume.material, "clouds_mat": clouds_mat})
 	add_child(journey)
 	var intro = preload("res://scripts/intro.gd").new()
 	intro.setup(player)
 	add_child(intro)
+	add_child(preload("res://scripts/bandages.gd").new())
+	var finale = preload("res://scripts/finale.gd").new()
+	finale.setup(player, ambient)
+	add_child(finale)
 
 	var admin = preload("res://scripts/admin.gd").new()
 	admin.setup({"player": player, "dream": dream, "presence": presence, "env": env, "bodycam": bodycam,
-		"journey": journey, "intro": intro})
-	add_child(admin)
+		"journey": journey, "intro": intro, "finale": finale})
+	var scripted := "--demo" in OS.get_cmdline_user_args() or "--bench" in OS.get_cmdline_user_args()
+	if not scripted:
+		add_child(admin)  # в демо и бенчмарке панель не нужна: случайное F1 не испортит запись
 
 	_mark("всё остальное")
 
+	if "--bench" in OS.get_cmdline_user_args():
+		var bench = preload("res://scripts/bench.gd").new()
+		bench.setup(player, intro)
+		add_child(bench)
 	if "--demo" in OS.get_cmdline_user_args():
 		var demo = preload("res://scripts/demo.gd").new()
-		demo.setup(player, intro, structures.access_points, lifts)
+		demo.setup(player, intro, structures.access_points, lifts, finale)
 		add_child(demo)
 
 
@@ -315,7 +332,7 @@ func _make_environment() -> void:
 	env.fog_height_density = 0.03
 	# Объёмный туман: ровная дымка + клочья из FogVolume (см. _make_fog_volume).
 	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.016
+	env.volumetric_fog_density = 0.007  # реже, чтобы вдали был виден масштаб; густые клочья — в FogVolume
 	env.volumetric_fog_albedo = Color(0.62, 0.63, 0.65)
 	env.volumetric_fog_length = 220.0
 	env.volumetric_fog_anisotropy = 0.35
@@ -520,6 +537,7 @@ func _make_signs(spots: Array[Dictionary]) -> void:
 			panel.mesh = quad
 			panel.material_override = neon[k]
 			panel.transform = face
+			_limit_range(panel, 220.0)
 			add_child(panel)
 			var label := Label3D.new()
 			label.text = letters
@@ -529,6 +547,7 @@ func _make_signs(spots: Array[Dictionary]) -> void:
 			label.pixel_size = minf(size.x * 0.75 / 96.0, size.y * 0.9 / (word.length() * 96.0))
 			label.modulate = Color(0.02, 0.02, 0.02)
 			label.transform = face.translated_local(Vector3(0, 0, 0.02))
+			_limit_range(label, 220.0)
 			add_child(label)
 
 
@@ -589,6 +608,7 @@ func _make_ads(spots: Array[Dictionary]) -> void:
 		panel.mesh = quad
 		panel.material_override = neon[k] if bright_panel else dark
 		panel.transform = xform
+		_limit_range(panel, 450.0 if size.x < 12.0 else 0.0)
 		add_child(panel)
 
 		var text: String = AD_TEXTS[rng.randi() % AD_TEXTS.size()]
@@ -601,6 +621,7 @@ func _make_ads(spots: Array[Dictionary]) -> void:
 		label.pixel_size = minf(size.x * 0.85 / (text.length() * 96 * 0.62), size.y * 0.5 / 96.0)
 		label.modulate = Color(0.02, 0.02, 0.02) if bright_panel else color * 3.0
 		label.transform = xform.translated_local(Vector3(0, 0, 0.03))
+		_limit_range(label, 450.0 if size.x < 12.0 else 0.0)
 		add_child(label)
 
 		# Цветной отсвет на улицу — только у невысоких вывесок, чтобы не перегружать сцену.
@@ -609,31 +630,10 @@ func _make_ads(spots: Array[Dictionary]) -> void:
 			light.light_color = color
 			light.light_energy = 2.5
 			light.omni_range = clampf(size.x * 2.5, 15.0, 40.0)
+			_fade_light(light)
 			light.transform = xform.translated_local(Vector3(0, -size.y * 0.3, 4.0))
 			add_child(light)
 			lights_left -= 1
-
-
-## Гора за воротами — туда, где, как верит герой, его ангел. Вершина — над облаками.
-func _make_mountain() -> ShaderMaterial:
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = 60
-	mesh.bottom_radius = 2300
-	mesh.height = 2600
-	mesh.radial_segments = 64
-	mesh.rings = 16
-	var mat := ShaderMaterial.new()
-	mat.shader = preload("res://shaders/mountain.gdshader")
-	mat.set_shader_parameter("noise_tex", shared_noise)
-	mat.set_shader_parameter("height", 2600.0)
-	mat.set_shader_parameter("cloud_level", 420.0 / 2600.0)
-	var mountain := MeshInstance3D.new()
-	mountain.mesh = mesh
-	mountain.material_override = mat
-	mountain.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mountain.position = Vector3(0, 1300, -4600)
-	add_child(mountain)
-	return mat
 
 
 ## Слой свинцовых туч над всем миром.
@@ -660,6 +660,7 @@ func _make_window_lights(points: Array[Vector3]) -> void:
 		light.light_color = Color(1.0, 0.8, 0.55)
 		light.light_energy = 0.8
 		light.omni_range = 7.0
+		_fade_light(light)
 		add_child(light)
 
 
@@ -684,3 +685,19 @@ func _make_hint() -> void:
 	var tween := create_tween()
 	tween.tween_interval(8.0)
 	tween.tween_property(label, "modulate:a", 0.0, 3.0)
+
+
+## Не рисовать объект дальше distance метров (0 — без ограничения); у края — плавное исчезновение.
+func _limit_range(node: GeometryInstance3D, distance: float) -> void:
+	if distance <= 0.0:
+		return
+	node.visibility_range_end = distance
+	node.visibility_range_end_margin = distance * 0.1
+	node.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED  # плавное проявление делает объект прозрачным — дорого; границу прячет туман
+
+
+## Фонарь гаснет вдали: дальше ~130 м его свет не считается.
+func _fade_light(light: Light3D) -> void:
+	light.distance_fade_enabled = true
+	light.distance_fade_begin = 100.0
+	light.distance_fade_length = 30.0

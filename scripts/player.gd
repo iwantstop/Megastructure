@@ -13,6 +13,8 @@ const LOOK_SMOOTHING := 14.0  # чем меньше, тем сильнее за�
 const EYE_HEIGHT := 1.5       # камера на груди, чуть ниже глаз
 const STEP_HEIGHT := 0.35     # на сколько можно шагнуть вверх без прыжка
 const BREATH_PERIOD := 5.0    # секунд на один вдох-выдох
+const ROLL_STRENGTH := 1.08   # сила крена камеры при поворотах и шагах вбок
+const MAX_FALL_SPEED := 55.0  # предельная скорость падения, м/с
 
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var head: Node3D
@@ -23,6 +25,8 @@ var flying := false
 var fly_speed := 20.0
 var locked := false   # во вступлении: осматриваться можно, ходить — нет
 var lying := 0.0      # 1 — лежит на спине и смотрит в небо, 0 — стоит
+var kneeling := 0.0   # 1 — стоит на коленях (финал на вершине)
+var fall_shake := 0.0  # тряска от встречного ветра при падении (вступление)
 
 # Куда смотрим по мыши; тело и голова плавно догоняют.
 var target_yaw := 0.0
@@ -111,7 +115,7 @@ func _physics_process(delta: float) -> void:
 		return
 
 	if not is_on_floor():
-		velocity.y -= gravity * delta
+		velocity.y = maxf(velocity.y - gravity * delta, -MAX_FALL_SPEED)
 		fall_speed = -velocity.y
 	elif Input.is_physical_key_pressed(KEY_SPACE) and not locked:
 		velocity.y = JUMP_VELOCITY
@@ -198,14 +202,14 @@ func _process(delta: float) -> void:
 	var amp := minf(walk_amount, 1.0) + maxf(walk_amount - 1.0, 0.0) * 0.2
 
 	# Лёгкий наклон в сторону поворота: чем быстрее поворачиваешь, тем сильнее, но не больше 2°.
-	var tilt_target := clampf(-yaw_gap * 0.25, -0.035, 0.035)
+	var tilt_target := clampf(-yaw_gap * 0.25 * ROLL_STRENGTH, -0.035 * ROLL_STRENGTH, 0.035 * ROLL_STRENGTH)
 	tilt = lerpf(tilt, tilt_target, 4.0 * delta)
-	strafe_tilt = lerpf(strafe_tilt, -move_input.x * 0.015, 4.0 * delta)
+	strafe_tilt = lerpf(strafe_tilt, -move_input.x * 0.015 * ROLL_STRENGTH, 4.0 * delta)
 	land_dip = lerpf(land_dip, 0.0, 7.0 * delta)
 
 	var sway := sin(step_phase)          # влево-вправо, один цикл на два шага
 	var bounce := sin(step_phase) ** 2   # плавный подскок на каждом шаге
-	var shake := amp * 0.3               # лёгкая тряска только на ходу
+	var shake := amp * 0.3 + fall_shake  # лёгкая тряска на ходу; сильная — в свободном падении
 
 	# В покое — только медленное дыхание.
 	breath_phase += delta * TAU / BREATH_PERIOD
@@ -213,9 +217,10 @@ func _process(delta: float) -> void:
 
 	# Лёжа: камера у самой земли, взгляд в небо, голова чуть завалена набок.
 	var lie := lying * lying * (3.0 - 2.0 * lying)
+	var kneel := kneeling * kneeling * (3.0 - 2.0 * kneeling)
 	camera.position = Vector3(
 		sway * 0.014 * amp,
-		-bounce * 0.022 * amp + breath * 0.008 - land_dip - 1.25 * lie,
+		-bounce * 0.022 * amp + breath * 0.008 - land_dip - 1.25 * lie - 0.75 * kneel,
 		0.3 * lie)
 	camera.rotation = Vector3(
 		-bounce * 0.004 * amp + breath * 0.003 + _shake(0.0) * 0.01 * shake + 1.05 * lie,

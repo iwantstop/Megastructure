@@ -1,17 +1,32 @@
 extends Node
 
-## Вступление: герой лежит на спине у подножия самой высокой башни, с которой прыгнул,
-## и смотрит в тучи. Мимо пробегают крысы. Осмотреться можно мышью; по W он медленно поднимается.
+## Вступление.
+## 1. Падение: герой уже сорвался с крыши самой высокой башни и летит вниз на спине,
+##    глядя вверх, на удаляющуюся крышу. В ушах — нарастающий рёв ветра.
+## 2. Удар о землю: тьма, глухой удар, тишина.
+## 3. Он лежит у подножия башни и смотрит на крышу, с которой упал. Мимо пробегают крысы.
+##    Осмотреться можно мышью; по W он медленно поднимается.
 
 const GET_UP_TIME := 4.5
+const GROUND := Vector3(4, 0.2, 86)   # где герой лежит после падения
+const FALL_FROM := 380.0             # с какой высоты начинается падение (крыша — на 760 м)
+const MIX_RATE := 22050.0
+
+enum State { FALLING, BLACKOUT, LYING, HINT, GETTING_UP, DONE }
 
 var player: CharacterBody3D
 var layer: CanvasLayer
 var fade: ColorRect
 var hint: Label
-var state := 0  # 0 — лежит, 1 — показана подсказка, 2 — поднимается, 3 — готово
+var state := State.FALLING
 var t := 0.0
 var rat_mat := StandardMaterial3D.new()
+
+var wind: AudioStreamPlayer
+var wind_playback: AudioStreamGeneratorPlayback
+var wind_lp := 0.0
+var wind_lp2 := 0.0
+var wind_t := 0.0
 
 
 func setup(p_player: CharacterBody3D) -> void:
@@ -20,9 +35,12 @@ func setup(p_player: CharacterBody3D) -> void:
 
 func _ready() -> void:
 	player.locked = true
-	player.lying = 1.0
+	player.lying = 1.0      # летит на спине, лицом вверх — к крыше
 	player.rotation.y = PI  # лицом к башне
 	player.target_yaw = PI
+	player.global_position = GROUND + Vector3.UP * FALL_FROM
+	player.last_safe = GROUND
+	player.velocity = Vector3(0, -20, 0)
 
 	layer = CanvasLayer.new()
 	layer.layer = 3
@@ -32,7 +50,7 @@ func _ready() -> void:
 	fade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(fade)
-	create_tween().tween_property(fade, "color:a", 0.0, 6.0).set_trans(Tween.TRANS_SINE)
+	create_tween().tween_property(fade, "color:a", 0.0, 1.5)
 
 	hint = Label.new()
 	hint.text = "W — подняться"
@@ -43,21 +61,74 @@ func _ready() -> void:
 
 	rat_mat.albedo_color = Color(0.08, 0.07, 0.07)
 	rat_mat.roughness = 0.6
-	for i in 12:
-		_rat(i)
+
+	var generator := AudioStreamGenerator.new()
+	generator.mix_rate = MIX_RATE
+	generator.buffer_length = 0.25
+	wind = AudioStreamPlayer.new()
+	wind.stream = generator
+	add_child(wind)
+	wind.play()
+	wind_playback = wind.get_stream_playback()
 
 
 func _process(delta: float) -> void:
 	t += delta
-	if state == 0 and t > 8.0:
-		state = 1
-		create_tween().tween_property(hint, "modulate:a", 0.6, 2.0)
-	elif state == 1 and Input.is_physical_key_pressed(KEY_W):
-		_get_up()
+	match state:
+		State.FALLING:
+			var speed := -player.velocity.y
+			player.fall_shake = clampf(speed / 50.0, 0.0, 1.0) * 2.5
+			_fill_wind(clampf(speed / 55.0, 0.15, 1.0))
+			if player.is_on_floor():
+				_impact()
+		State.LYING:
+			if t > 8.0:
+				state = State.HINT
+				create_tween().tween_property(hint, "modulate:a", 0.6, 2.0)
+		State.HINT:
+			if Input.is_physical_key_pressed(KEY_W):
+				_get_up()
+
+
+## Рёв ветра: шум, громче и «ярче» с ростом скорости, с порывами.
+func _fill_wind(level: float) -> void:
+	var bright := lerpf(0.05, 0.35, level)
+	for frame in wind_playback.get_frames_available():
+		wind_t += 1.0 / MIX_RATE
+		wind_lp += (randf() * 2.0 - 1.0 - wind_lp) * bright
+		wind_lp2 += (wind_lp - wind_lp2) * bright
+		var gust := 0.75 + 0.25 * sin(wind_t * 1.7) * sin(wind_t * 0.6)
+		var s := wind_lp2 * level * gust * 2.2
+		wind_playback.push_frame(Vector2(s, s * 0.92))
+
+
+## Удар о землю: ветер обрывается, тьма и глухой удар, потом он приходит в себя.
+func _impact() -> void:
+	state = State.BLACKOUT
+	player.fall_shake = 0.0
+	player.global_position = GROUND
+	wind.stop()
+	fade.color.a = 1.0
+	var thud := AudioStreamPlayer.new()
+	thud.stream = _thud_sound()
+	thud.volume_db = 4.0
+	add_child(thud)
+	thud.play()
+	var tween := create_tween()
+	tween.tween_interval(3.0)
+	tween.tween_callback(_wake_up)
+	tween.tween_property(fade, "color:a", 0.0, 5.0).set_trans(Tween.TRANS_SINE)
+
+
+func _wake_up() -> void:
+	state = State.LYING
+	t = 0.0
+	for i in 12:
+		_rat(i)
 
 
 func _get_up() -> void:
-	state = 2
+	state = State.GETTING_UP
 	create_tween().tween_property(hint, "modulate:a", 0.0, 0.8)
 	var tween := create_tween()
 	tween.tween_property(player, "lying", 0.0, GET_UP_TIME).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
@@ -65,16 +136,40 @@ func _get_up() -> void:
 
 
 func _finish() -> void:
-	state = 3
+	state = State.DONE
 	player.locked = false
 	layer.queue_free()
 
 
-## Из админ-панели.
+## Из админ-панели, демо и бенчмарка: сразу на землю и встать.
 func skip() -> void:
-	if state < 2:
-		fade.color.a = 0.0
-		_get_up()
+	if state >= State.GETTING_UP:
+		return
+	if state == State.FALLING:
+		wind.stop()
+		player.fall_shake = 0.0
+		player.global_position = GROUND
+		player.velocity = Vector3.ZERO
+	fade.color.a = 0.0
+	_get_up()
+
+
+## Глухой удар: низкий гул, быстро затухающий, с хрустом шума в начале.
+func _thud_sound() -> AudioStreamWAV:
+	var length := int(MIX_RATE * 1.2)
+	var data := PackedByteArray()
+	data.resize(length * 2)
+	for i in length:
+		var time := i / MIX_RATE
+		var body := sin(TAU * 48.0 * time) * exp(-time * 4.0)
+		var crack := (randf() * 2.0 - 1.0) * exp(-time * 30.0) * 0.5
+		var s := clampf((body + crack) * 0.9, -1.0, 1.0)
+		data.encode_s16(i * 2, int(s * 32767.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = int(MIX_RATE)
+	wav.data = data
+	return wav
 
 
 ## Крыса пробегает мимо лежащего героя.

@@ -205,6 +205,7 @@ func _platform() -> void:
 				_well(i * PITCH, j * PITCH)
 			else:
 				b.box(Vector3(i * PITCH, -thick / 2.0, j * PITCH), Vector3(PLATE, thick, PLATE), m.ground)
+				b.occluder(Vector3(i * PITCH, -thick / 2.0, j * PITCH), Vector3(PLATE, thick, PLATE))
 	var x0 := PLATFORM.position.x
 	var x1 := PLATFORM.end.x
 	var z0 := PLATFORM.position.y
@@ -212,9 +213,11 @@ func _platform() -> void:
 	for i in range(-6, 6):
 		var x := (i + 0.5) * PITCH
 		b.box(Vector3(x, -thick / 2.0, (z0 + 76.0) / 2.0), Vector3(8, thick, 76.0 - z0), m.ground)
+		b.occluder(Vector3(x, -thick / 2.0, (z0 + 76.0) / 2.0), Vector3(8, thick, 76.0 - z0))
 	for j in range(-8, 2):
 		var z := (j + 0.5) * PITCH
 		b.box(Vector3(0, -thick / 2.0, z), Vector3(x1 - x0, thick, 8), m.ground)
+		b.occluder(Vector3(0, -thick / 2.0, z), Vector3(x1 - x0, thick, 8))
 	b.box(Vector3(0, -thick / 2.0, z0 + 2.0), Vector3(x1 - x0, thick, 4), m.ground)
 	b.box(Vector3(0, -thick / 2.0, (76.0 + z1) / 2.0), Vector3(x1 - x0, thick, z1 - 76.0), m.ground)
 
@@ -260,6 +263,7 @@ func _causeway() -> void:
 	var mid := (z0 + CAUSEWAY_END) / 2.0
 	var width := 28.0
 	b.box(Vector3(0, -4, mid), Vector3(width, 8, length), m.ground)
+	b.occluder(Vector3(0, -4, mid), Vector3(width, 8, length))
 	b.box(Vector3(0, 0, mid), Vector3(8, 0.1, length), m.stone, Basis.IDENTITY, false)
 	for s in [-1.0, 1.0]:
 		_railing(Vector3(s * (width / 2.0 - 0.1), 0, z0), Vector3(s * (width / 2.0 - 0.1), 0, CAUSEWAY_END))
@@ -580,6 +584,7 @@ func _facade_mat() -> Material:
 func _facade_building(t: Transform3D, w: float, d: float, floors: int, shop: bool) -> void:
 	var h := floors * FLOOR_H + 0.3
 	b.box_local(t, Vector3(0, h / 2.0, 0), Vector3(w, h, d), _facade_mat())
+	b.occluder_local(t, Vector3(0, h / 2.0, 0), Vector3(w, h, d))
 	b.box_local(t, Vector3(0, h + 0.4, 0), Vector3(w + 0.3, 0.8, d + 0.3), m.concrete_dark, false)
 	if shop:
 		_storefront(t, w, d)
@@ -634,6 +639,7 @@ func _skyscraper(t: Transform3D, w: float, d: float, h: float) -> void:
 		var th := h * 0.5 if tier == 0 else h * 0.5 / (tiers - 1)
 		var line: Material = _pick(m.neon)
 		b.box_local(t, Vector3(0, y + th / 2.0, 0), Vector3(cw, th, cd), mat, y < 60.0)
+		b.occluder_local(t, Vector3(0, y + th / 2.0, 0), Vector3(cw, th, cd))
 		b.box_local(t, Vector3(0, y + th + 0.4, 0), Vector3(cw + 0.6, 0.8, cd + 0.6), m.concrete_dark, false)
 		b.box_local(t, Vector3(0, y + th + 0.85, cd / 2.0 + 0.32), Vector3(cw + 0.6, 0.12, 0.05), line, false)
 		# Причал для летающих машин.
@@ -660,6 +666,7 @@ func _megablock(cx: float, cz: float) -> void:
 	var t := Transform3D(Basis(Vector3.UP, (rng.randi() % 4) * PI / 2.0), Vector3(cx, CURB, cz))
 	var podium := rng.randf_range(10, 22)
 	b.box_local(t, Vector3(0, podium / 2.0, 0), Vector3(34, podium, 34), _facade_mat())
+	b.occluder_local(t, Vector3(0, podium / 2.0, 0), Vector3(34, podium, 34))
 	_storefront(t, 34, 34)
 	_add_ad(t, Vector3(0, podium * 0.6, 17.12), Vector2(20, podium * 0.55))
 	var top := t.translated_local(Vector3(0, podium, 0))
@@ -710,6 +717,7 @@ func _tallest_tower() -> void:
 	var w := 46.0
 	var h := 760.0
 	b.box_local(t, Vector3(0, h / 2.0, 0), Vector3(w, h, w), m.tower_panels)
+	b.occluder_local(t, Vector3(0, h / 2.0, 0), Vector3(w, h, w))
 	_slits(t, 0.0, h, w, w, 0.0)
 	var ledge := 30.0
 	while ledge < h:
@@ -1092,6 +1100,7 @@ func _slab_piece(t: Transform3D, xa: float, xb: float, za: float, zb: float, cy:
 func _ramp_tower(x: float, z: float, core: float, h: float) -> void:
 	var t := _yaw_at(x, z)
 	b.box_local(t, Vector3(0, h / 2.0, 0), Vector3(core, h, core), m.panels)
+	b.occluder_local(t, Vector3(0, h / 2.0, 0), Vector3(core, h, core))
 	var rw := 4.0
 	var half := core / 2.0 + rw / 2.0
 	var corners := [Vector2(half, half), Vector2(half, -half), Vector2(-half, -half), Vector2(-half, half)]
@@ -1126,6 +1135,7 @@ func _gate(c: Vector3, yaw: float, gap: float, h: float) -> void:
 	for side in [-1.0, 1.0]:
 		var lx: float = side * (gap / 2.0 + pw / 2.0)
 		b.box_local(t, Vector3(lx, (h + ABYSS) / 2.0, 0), Vector3(pw, h - ABYSS, 30), m.weathered)
+		b.occluder_local(t, Vector3(lx, (h + ABYSS) / 2.0, 0), Vector3(pw, h - ABYSS, 30))
 		_slits(t, 0.0, h, pw, 30, lx)
 		var wp := t * Vector3(lx, 0, 0)
 		reserve(wp.x, wp.z, 30)
@@ -1136,6 +1146,7 @@ func _gate(c: Vector3, yaw: float, gap: float, h: float) -> void:
 func _megaslab(c: Vector3, size: float, height: float) -> void:
 	var thick := 30.0
 	b.box(c + Vector3(0, height + thick / 2.0, 0), Vector3(size, thick, size), m.concrete_dark, Basis.IDENTITY, false)
+	b.occluder(c + Vector3(0, height + thick / 2.0, 0), Vector3(size, thick, size))
 	var ribs := 8
 	for i in ribs + 1:
 		var off := -size / 2.0 + i * size / ribs
@@ -1146,6 +1157,7 @@ func _megaslab(c: Vector3, size: float, height: float) -> void:
 			var px := c.x + (i - 1) * size * 0.35
 			var pz := c.z + (j - 1) * size * 0.35
 			b.box(Vector3(px, (height + ABYSS) / 2.0, pz), Vector3(28, height - ABYSS, 28), m.weathered, Basis.IDENTITY, false)
+			b.occluder(Vector3(px, (height + ABYSS) / 2.0, pz), Vector3(28, height - ABYSS, 28))
 			reserve(px, pz, 30)
 	# Конструкции, свисающие с потолка.
 	for k in 7:
@@ -1178,6 +1190,7 @@ func _wall(x: float, z: float, yaw: float, length: float, h: float) -> void:
 		var seg := end - pos
 		var mid := pos + seg / 2.0
 		b.box_local(t, Vector3(mid, (h + ABYSS) / 2.0, 0), Vector3(seg, h - ABYSS, thick), m.panels, false)
+		b.occluder_local(t, Vector3(mid, (h + ABYSS) / 2.0, 0), Vector3(seg, h - ABYSS, thick))
 		b.box_local(t, Vector3(mid, h + 1.5, 0), Vector3(seg, 3, thick + 4), m.concrete_dark, false)
 		var bx := pos + 12.0
 		while bx < end - 6.0:
@@ -1201,6 +1214,7 @@ func _slab_tower(x: float, z: float, w: float, d: float, h: float) -> void:
 	for tier in tiers:
 		var th := h if tiers == 1 else (h * 0.6 if tier == 0 else h * 0.4 / (tiers - 1))
 		b.box_local(t, Vector3(0, y + th / 2.0, 0), Vector3(w, th, d), mat, false)
+		b.occluder_local(t, Vector3(0, y + th / 2.0, 0), Vector3(w, th, d))
 		# Карнизы.
 		var ledge_y := y + rng.randf_range(25, 45)
 		while ledge_y < y + th - 5.0:

@@ -1,0 +1,164 @@
+class_name Mountain
+extends Node3D
+
+## Гора за мостом — цель пути. Ландшафт Terrain3D, сгенерированный из кода.
+## Тропа — спираль: начинается у конца моста над бездной (высота 0) и, обойдя гору
+## два с половиной раза, выводит на вершину над облаками. Между витками тропы — скальные
+## стены, снаружи — обрыв в бездну. Длина подъёма ~4 км, уклон тропы постоянный (~15%).
+
+const CENTER := Vector3(0, 0, -2870)
+const R_BASE := 500.0        # радиус первого витка тропы
+const R_TOP := 40.0          # радиус вершинной площадки
+const LAPS := 2.5
+const PEAK := 650.0          # облака — на 420 м
+const PATH_W := 12.0
+const START_ANGLE := PI / 2.0  # тропа начинается со стороны моста (+Z)
+const SPACING := 2.0         # метров между точками карты высот
+const MARGIN := 220.0        # поле вокруг горы, где склон уходит в бездну
+const REGION := 1024         # точек карты высот в регионе Terrain3D
+
+const THETA := LAPS * TAU
+const C := (R_BASE - R_TOP) / THETA  # насколько тропа приближается к центру на радиан
+
+var terrain: Terrain3D
+var noise := FastNoiseLite.new()
+
+
+func _ready() -> void:
+	noise.seed = 4242
+	noise.frequency = 0.012
+	noise.fractal_octaves = 4
+
+	# Terrain3D при добавлении в сцену ставит свои материал и набор текстур по умолчанию,
+	# поэтому всё настраиваем уже после add_child.
+	terrain = Terrain3D.new()
+	add_child(terrain)
+	terrain.material.world_background = 0  # вне горы — ничего: никакого бесконечного пола
+	terrain.assets.set_texture(0, _rock_texture())
+	terrain.show_checkered = false
+	terrain.vertex_spacing = SPACING
+	terrain.change_region_size(REGION)
+	terrain.collision_mode = 3  # вся гора твёрдая сразу, а не только вокруг камеры
+
+	# Terrain3D пишет карту высот с угла региона, поэтому начало карты выравниваем по сетке
+	# регионов, а всё поле вокруг горы заполняем бездной.
+	var region_m := REGION * SPACING
+	var half := R_BASE + MARGIN
+	var origin := Vector3(floorf((CENTER.x - half) / region_m) * region_m, 0, floorf((CENTER.z - half) / region_m) * region_m)
+	var width := int(ceilf((CENTER.x + half - origin.x) / SPACING))
+	var depth := int(ceilf((CENTER.z + half - origin.z) / SPACING))
+	var heights := Image.create(width, depth, false, Image.FORMAT_RF)
+	var colors := Image.create(width, depth, false, Image.FORMAT_RGBA8)
+	heights.fill(Color(-800.0, 0, 0))
+	colors.fill(Color(0.3, 0.29, 0.28, 0.5))
+	var px0 := int((CENTER.x - half - origin.x) / SPACING)
+	var pz0 := int((CENTER.z - half - origin.z) / SPACING)
+	for py in range(maxi(pz0, 0), depth):
+		for px in range(maxi(px0, 0), width):
+			var x := origin.x + px * SPACING
+			var z := origin.z + py * SPACING
+			var sample := _sample(x, z)
+			heights.set_pixel(px, py, Color(sample.x, 0, 0))
+			colors.set_pixel(px, py, _color(sample.x, sample.y, x, z))
+	terrain.data.import_images([heights, null, colors], origin, 0.0, 1.0)
+
+
+## Высота тропы на угле спирали theta: пропорциональна пройденному пути, поэтому уклон везде одинаковый.
+static func path_height(theta: float) -> float:
+	return PEAK * _arc(theta) / _arc(THETA)
+
+
+static func _arc(theta: float) -> float:
+	return R_BASE * theta - C * theta * theta / 2.0
+
+
+## Точка на тропе: fraction 0 — начало у моста, 1 — вершина. Возвращает положение и направление вперёд.
+static func path_point(fraction: float) -> Transform3D:
+	var theta := clampf(fraction, 0.0, 1.0) * THETA
+	var r := R_BASE - C * theta
+	var phi := START_ANGLE + theta
+	var pos := CENTER + Vector3(cos(phi) * r, path_height(theta), sin(phi) * r)
+	var ahead := CENTER + Vector3(cos(phi + 0.05) * (r - C * 0.05), 0, sin(phi + 0.05) * (r - C * 0.05))
+	ahead.y = pos.y
+	return Transform3D(Basis.looking_at(ahead - pos, Vector3.UP), pos)
+
+
+## Высота земли в точке и признак «это тропа» (x — высота, y — 1 на тропе, 0 — скала).
+func _sample(x: float, z: float) -> Vector2:
+	var dx := x - CENTER.x
+	var dz := z - CENTER.z
+	var r := sqrt(dx * dx + dz * dz)
+	var theta0 := fposmod(atan2(dz, dx) - START_ANGLE, TAU)
+	var rock := noise.get_noise_2d(x, z)
+
+	# Ближайший виток снаружи (k_out) и внутри (k_out + 1) от этой точки.
+	var k_out := floori((R_BASE - r - C * theta0) / (C * TAU))
+	var theta_out := theta0 + k_out * TAU
+	var r_out := R_BASE - C * theta_out
+	var theta_in := theta_out + TAU
+	var r_in := R_BASE - C * theta_in
+
+	if k_out < 0:
+		# Снаружи первого витка: край тропы и обрыв в бездну.
+		var h0 := path_height(theta_in)
+		if r - r_in <= PATH_W / 2.0:
+			return Vector2(h0, 1.0)
+		return Vector2(maxf(h0 - (r - r_in - PATH_W / 2.0) * 1.8 + rock * 12.0, -500.0), 0.0)
+
+	var h_out := path_height(theta_out)
+	if theta_in >= THETA:
+		# Внутри последнего витка — вершинная площадка.
+		r_in = maxf(r_in, R_TOP)
+		if r - r_in <= PATH_W / 2.0 or r < R_TOP:
+			return Vector2(PEAK, 1.0)
+	var h_in := PEAK if theta_in >= THETA else path_height(theta_in)
+
+	if r_out - r <= PATH_W / 2.0:
+		return Vector2(h_out, 1.0)
+	if r - r_in <= PATH_W / 2.0:
+		return Vector2(h_in, 1.0)
+	# Скальная стена между витками: от нижней тропы к верхней, с выступами.
+	var t := clampf((r_out - PATH_W / 2.0 - r) / maxf(r_out - r_in - PATH_W, 1.0), 0.0, 1.0)
+	var wall := lerpf(h_out, h_in, smoothstep(0.0, 1.0, t))
+	return Vector2(wall + rock * 25.0 * sin(t * PI), 0.0)
+
+
+## Каменная текстура (без неё Terrain3D рисует отладочную шахматную клетку):
+## светлый зернистый камень — цвет даёт карта цветов горы. Альфа альбедо — высота рельефа,
+## альфа нормалей — шероховатость (так Terrain3D хранит эти каналы).
+func _rock_texture() -> Terrain3DTextureAsset:
+	var grain := FastNoiseLite.new()
+	grain.frequency = 0.05
+	grain.fractal_octaves = 5
+	var size := 512
+	var albedo := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var normal := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	for y in size:
+		for x in size:
+			var n := grain.get_noise_2d(x, y) * 0.5 + 0.5
+			var v := lerpf(0.75, 1.0, n)
+			albedo.set_pixel(x, y, Color(v, v, v, n))
+			var dx := grain.get_noise_2d(x + 1, y) - grain.get_noise_2d(x - 1, y)
+			var dy := grain.get_noise_2d(x, y + 1) - grain.get_noise_2d(x, y - 1)
+			var nrm := Vector3(-dx * 2.0, -dy * 2.0, 1.0).normalized() * 0.5 + Vector3.ONE * 0.5
+			normal.set_pixel(x, y, Color(nrm.x, nrm.y, nrm.z, 0.85))
+	albedo.generate_mipmaps()
+	normal.generate_mipmaps()
+	var asset := Terrain3DTextureAsset.new()
+	asset.name = "Камень"
+	asset.albedo_texture = ImageTexture.create_from_image(albedo)
+	asset.normal_texture = ImageTexture.create_from_image(normal)
+	asset.uv_scale = 0.15
+	return asset
+
+
+## Цвет: тропа — светлая утоптанная, скалы — тёмные; выше облаков всё теплее и светлее.
+func _color(h: float, on_path: float, x: float, z: float) -> Color:
+	var n := noise.get_noise_2d(x * 3.0, z * 3.0) * 0.5 + 0.5
+	var rock := Color(0.3, 0.29, 0.28).lerp(Color(0.42, 0.4, 0.37), n)
+	var trail := Color(0.55, 0.5, 0.43).lerp(Color(0.62, 0.57, 0.5), n)
+	var c := trail if on_path > 0.5 else rock
+	var high := smoothstep(380.0, PEAK, h)
+	c = c.lerp(Color(0.78, 0.72, 0.62), high * 0.5)
+	c.a = 0.5  # шероховатость — нейтральная
+	return c
