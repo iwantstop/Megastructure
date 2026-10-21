@@ -3,7 +3,8 @@ extends CanvasLayer
 ## Финал на вершине. Герой падает на колени, лицом к солнцу. Пока внизу по слову проступает
 ## «Это...Всё...Я», перед ним, со стороны солнца, в последний раз появляется ангел — а на слове «Я»
 ## за её спиной взрывается солнце: ослепительное ядро, ударная волна по небу, вспышка, гул.
-## Потом он ложится, закрывает глаза; мир медленно растворяется в тёплом свете, потом в темноте. Конец.
+## Потом он ложится, закрывает глаза; мир медленно растворяется в тёплом свете, потом в темноте.
+## В темноте — заключительные слайды (EPILOGUE), как пролог: по центру, каждый ждёт пробела. Конец.
 
 const SILENCE := 10.0  # сколько он смотрит на солнце, стоя на коленях
 ## Фраза проступает по частям в одном субтитре: «Это...» → «Это...Всё...» → «Это...Всё...Я».
@@ -12,10 +13,20 @@ const WORD_PAUSE := 1.6        # пауза перед следующей час
 const REALIZATION_HOLD := 2.5  # столько вся фраза держится после последнего слова
 const ANGEL_AHEAD := 7.0       # на каком расстоянии перед героем появляется ангел, м
 const SUN_DISTANCE := 1800.0   # где взрывается солнце (в его стороне), м
+const EPILOGUE := [
+	"Всё стало на свои места. Боль ушла, оставив после себя умиротворение: я вырвался из тьмы",
+	"Никакого ангела нет",
+	"Теперь это обречено на покой",
+]
+const SLIDE_FADE := 1.6
 
 var player: CharacterBody3D
 var started := false
 var veil: ColorRect
+var slide_text: Label
+var slide_hint: Label
+var slide := -1
+var slide_ready := false       # слайд проявился — пробел листает дальше
 
 
 func setup(p_player: CharacterBody3D) -> void:
@@ -66,6 +77,39 @@ func start() -> void:
 	tween.tween_property(veil, "color:a", 1.0, 8.0)
 	tween.parallel().tween_method(_fade_world_sound, 0.0, -60.0, 10.0)  # дождь, ветер и музыка стихают
 	tween.tween_property(veil, "color", Color(0, 0, 0, 1), 4.0)
+	tween.tween_interval(1.5)
+	tween.tween_callback(_epilogue)
+
+
+## Заключительные слайды на чёрном: проявляются по одному, пробел — следующий; после последнего текст тает.
+func _epilogue() -> void:
+	slide_text = ScreenText.center(self, "", 24, Color(0.88, 0.87, 0.85, 0.82))
+	slide_text.modulate.a = 0.0
+	slide_hint = ScreenText.corner_hint(self, "пробел — дальше")
+	slide_hint.modulate.a = 0.0
+	_next_slide()
+
+
+func _next_slide() -> void:
+	slide_ready = false
+	slide += 1
+	var tween := create_tween()
+	if slide > 0:
+		tween.tween_property(slide_text, "modulate:a", 0.0, SLIDE_FADE * 0.6).set_trans(Tween.TRANS_SINE)
+		tween.parallel().tween_property(slide_hint, "modulate:a", 0.0, 0.4)
+	if slide >= EPILOGUE.size():
+		return   # конец: только темнота
+	var text: String = EPILOGUE[slide]
+	tween.tween_callback(func() -> void: slide_text.text = text)
+	tween.tween_property(slide_text, "modulate:a", 1.0, SLIDE_FADE).set_trans(Tween.TRANS_SINE)
+	tween.tween_callback(func() -> void: slide_ready = true)
+	tween.tween_property(slide_hint, "modulate:a", 1.0, 0.8)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if slide_ready and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
+		get_viewport().set_input_as_handled()
+		_next_slide()
 
 
 ## На коленях, лицом к солнцу, — он понимает: ангела не было. Фраза дополняется по слову;
@@ -103,7 +147,7 @@ func _angel_appears() -> void:
 	flat.y = 0
 	var feet := player.global_position + flat.normalized() * ANGEL_AHEAD
 	feet.y = Mountain.PEAK
-	presence.finale_appear(feet, player.global_position)
+	presence.finale_appear(feet, player.global_position, WORD_PAUSE * (REALIZATION.size() - 1))  # одна вспышка — на взрыв
 
 
 ## Солнце взрывается: ядро раздувается и гаснет, кольцо ударной волны расходится по небу,

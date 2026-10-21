@@ -29,7 +29,8 @@ const FAREWELL_TURN := 1.8       # медленный поворот к геро
 const FAREWELL_LOOK := 1.8       # смотрит на него, с
 const FAREWELL_DISSOLVE := 3.5
 const FAREWELL_LINE := "Прости меня..."
-const CRY_DB := -12.0          # плач при прощании — тихий, издалека
+const CRY_DB := -9.0           # плач героя при прощании — тихий, близко, «у самого уха»
+const FLASH := Vector2(0.04, 0.09)  # в финале она мелькает «25-м кадром»: столько секунд на экране, с
 
 enum Farewell { NONE, WAITING, TURNING, GONE }
 
@@ -48,7 +49,7 @@ var farewell_done := false
 var finale_mode := false       # финал: фигуру больше ничто не прячет
 var farewell_tween: Tween
 var rng := RandomNumberGenerator.new()
-var cry: AudioStreamWAV         # плач при прощании — готовится в фоне при загрузке (cry.gd)
+var cry: AudioStreamWAV         # плач героя при прощании — готовится в фоне при загрузке (cry.gd)
 
 
 func _ready() -> void:
@@ -144,23 +145,16 @@ func _farewell_step(delta: float) -> void:
 			pass
 
 
-## Тихий плач — от неё самой, пока она растворяется.
+## Пока она растворяется, герой тихо плачет — звук его самого: близко и без эха.
 func _cry() -> void:
-	if cry == null:
-		return
-	var voice := AudioStreamPlayer3D.new()
-	voice.stream = cry
-	voice.volume_db = CRY_DB
-	voice.unit_size = 8.0
-	voice.bus = &"Music"   # с эхом-залом — звучит тише и дальше
-	voice.position = Vector3.UP * 1.5
-	figure.add_child(voice)
-	voice.play()
-	voice.finished.connect(voice.queue_free)
+	if cry:
+		Synth.play_once(self, cry, CRY_DB)
 
 
-## Финал: она появляется в последний раз — на вершине, перед героем, со стороны солнца, лицом к нему.
-func finale_appear(feet: Vector3, hero: Vector3) -> void:
+## Финал: она в последний раз — на вершине, перед героем, со стороны солнца, лицом к нему. Но не стоит,
+## а мелькает «25-м кадром»: на долю секунды, несколько раз, рваным ритмом; одна вспышка — в миг взрыва солнца
+## (через boom_at секунд).
+func finale_appear(feet: Vector3, hero: Vector3, boom_at := 3.2) -> void:
 	finale_mode = true
 	if farewell_tween:
 		farewell_tween.kill()      # недоигранное прощание не должно спрятать её
@@ -170,10 +164,19 @@ func finale_appear(feet: Vector3, hero: Vector3) -> void:
 	var to_hero := hero - feet
 	to_hero.y = 0
 	figure.global_transform = Transform3D(Basis.looking_at(to_hero.normalized(), Vector3.UP), feet)
-	figure.visible = true
+	figure.visible = false
 	anim.play("Idle")
-	mat.albedo_color.a = 0.0
-	create_tween().tween_property(mat, "albedo_color:a", 1.0, 2.0).set_trans(Tween.TRANS_SINE)
+	mat.albedo_color.a = 1.0
+	var flashes := [0.35, 1.1, 1.3, 2.25, boom_at, boom_at + 0.75, boom_at + 0.95]
+	var tween := create_tween()
+	var now := 0.0
+	for at in flashes:
+		var shown := rng.randf_range(FLASH.x, FLASH.y)
+		tween.tween_interval(at - now)
+		tween.tween_callback(func() -> void: figure.visible = true)
+		tween.tween_interval(shown)
+		tween.tween_callback(func() -> void: figure.visible = false)
+		now = at + shown
 
 
 ## Вызов из админ-панели.

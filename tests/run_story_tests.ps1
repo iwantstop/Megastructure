@@ -1,5 +1,5 @@
 ﻿# Прогон истории целиком: пролог → падение → текст во тьме → подъём → рассказ об ангеле →
-# мост с припадками и рассказом на 68% → прощание с ангелом и глитч к вершине → финал. Печатает итоги и сохраняет отчёт в tests/story_report.txt,
+# мост с припадками и рассказом на 68% → прощание с ангелом и глитч к вершине → финал и заключительные слайды. Печатает итоги и сохраняет отчёт в tests/story_report.txt,
 # снимки — в screenshots/ (prologue_*.png, story_*.png).
 # Запуск: двойной клик по tests/run_story_tests.bat (или powershell -File tests/run_story_tests.ps1)
 
@@ -10,7 +10,8 @@ $runs = @(
     @{ Name = "1. Пролог (слайды только по пробелу)"; Script = "tests/prologue_view.gd"; Args = @("--", "--prologue"); Filter = "PROLOGUE" },
     @{ Name = "2. Падение, текст во тьме, подъём, рассказ об ангеле"; Script = "tests/story_intro_test.gd"; Args = @(); Filter = "STORY" },
     @{ Name = "3. Мост: припадки, рассказ на 68%"; Script = "tests/seizure_test.gd"; Args = @(); Filter = "FIT" },
-    @{ Name = "4. Гора: прощание с ангелом, через 100 м глитч к вершине, рассказ о солнце"; Script = "tests/farewell_jump_test.gd"; Args = @(); Filter = "JUMP" }
+    @{ Name = "4. Гора: прощание с ангелом, через 100 м глитч к вершине, рассказ о солнце"; Script = "tests/farewell_jump_test.gd"; Args = @(); Filter = "JUMP" },
+    @{ Name = "5. Финал: вспышки ангела, затемнение, заключительные слайды"; Script = "tests/epilogue_test.gd"; Args = @(); Filter = "EPILOGUE" }
 )
 
 "Прогон истории $(Get-Date -Format 'dd.MM.yyyy HH:mm')" | Out-File $report -Encoding utf8

@@ -22,6 +22,9 @@ var fits := 0
 var sub_first := -1
 var sub_last := -1
 var narrated := false
+var flashes: Array[float] = []
+var angel_frames := 0
+var angel_was_visible := false
 var look_check := 0.0
 var looked_forward := false
 
@@ -123,6 +126,12 @@ func _process(delta: float) -> bool:
 			stage = 4
 			t = 0.0
 		4:
+			var angel: Node3D = get_first_node_in_group("presence").figure
+			if angel.visible and not angel_was_visible:
+				flashes.append(t)
+			if angel.visible:
+				angel_frames += 1
+			angel_was_visible = angel.visible
 			if hud.subtitle.modulate.a > 0.99:
 				var now := Time.get_ticks_msec()
 				if sub_first < 0:
@@ -130,5 +139,10 @@ func _process(delta: float) -> bool:
 				sub_last = now
 			if t > 12.0:
 				print("FIT finale subtitle=\"%s\" fully_visible=%.1fs" % [hud.subtitle.text, (sub_last - sub_first) / 1000.0])
+				var gaps := []
+				for k in range(1, flashes.size()):
+					gaps.append(snappedf(flashes[k] - flashes[k - 1], 0.01))
+				print("FIT finale angel flashes=%d, frames visible=%d (of ~%d), gaps=%s, still visible=%s" % [
+					flashes.size(), angel_frames, int(t * Engine.get_frames_per_second()), gaps, angel_was_visible])
 				return true
 	return false
