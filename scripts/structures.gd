@@ -33,7 +33,9 @@ var city_towers: Array[Dictionary] = []  # небоскрёбы — между �
 
 ## Самая высокая башня — с неё прыгнул герой. Он лежит у её подножия, в HERO_SPOT.
 const TALLEST_TOWER := Vector3(0, 0, 118)
+const TALLEST_HEIGHT := 760.0
 const HERO_SPOT := Vector3(4, 0.2, 86)
+const ROOF_SPOT := Vector3(4, TALLEST_HEIGHT + 0.2, 100)  # на крыше, у того края, с которого он прыгнул
 
 ## Уровни города над землёй: галереи вдоль кварталов, мосты над улицами.
 const L1 := 14.0
@@ -725,7 +727,7 @@ func _add_ad(t: Transform3D, local_center: Vector3, size: Vector2) -> void:
 func _tallest_tower() -> void:
 	var t := Transform3D(Basis(Vector3.UP, PI), TALLEST_TOWER)
 	var w := 46.0
-	var h := 760.0
+	var h := TALLEST_HEIGHT
 	b.box_local(t, Vector3(0, h / 2.0, 0), Vector3(w, h, w), m.tower_panels)
 	b.occluder_local(t, Vector3(0, h / 2.0, 0), Vector3(w, h, w))
 	_slits(t, 0.0, h, w, w, 0.0)

@@ -11,6 +11,7 @@ var t := 0.0
 var stage := 0
 var shown_at := -1.0
 var last_slide := -1
+var end_printed := false
 
 
 func _initialize() -> void:
@@ -42,6 +43,9 @@ func _process(delta: float) -> bool:
 		1:
 			if player.locked:
 				return false
+			for c in world.get_children():   # рассказ о тепле герой уже слышал на мосту
+				if c.get_script() and str(c.get_script().resource_path).ends_with("journey.gd"):
+					c.warm_told = true
 			player.global_position = Mountain.CENTER + Vector3(0, Mountain.PEAK + 0.5, 0)
 			player.velocity = Vector3.ZERO
 			finale.start()
@@ -61,7 +65,11 @@ func _process(delta: float) -> bool:
 				stage = 3
 				t = 0.0
 		3:
-			if t > 2.0:
-				print("EPILOGUE end: text alpha=%.2f, screen black=%s" % [finale.slide_text.modulate.a, finale.veil.color == Color(0, 0, 0, 1)])
+			if t > 1.0 and not end_printed:
+				end_printed = true
+				print("EPILOGUE end: text alpha=%.2f, screen black=%s" % [finale.slide_text.modulate.a, finale.veil.color.a > 0.99])
+			if t > 9.0:
+				root.get_viewport().get_texture().get_image().save_png("res://screenshots/epilogue_roof.png")
+				print("EPILOGUE roof: pos=%s on_floor=%s locked=%s veil=%.2f" % [player.global_position.snapped(Vector3.ONE * 0.1), player.is_on_floor(), player.locked, finale.veil.color.a])
 				return true
 	return t > 120.0

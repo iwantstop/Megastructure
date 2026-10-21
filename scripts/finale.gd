@@ -4,7 +4,8 @@ extends CanvasLayer
 ## «Это...Всё...Я», перед ним, со стороны солнца, в последний раз появляется ангел — а на слове «Я»
 ## за её спиной взрывается солнце: ослепительное ядро, ударная волна по небу, вспышка, гул.
 ## Потом он ложится, закрывает глаза; мир медленно растворяется в тёплом свете, потом в темноте.
-## В темноте — заключительные слайды (EPILOGUE), как пролог: по центру, каждый ждёт пробела. Конец.
+## В темноте — заключительные слайды (EPILOGUE), как пролог: по центру, каждый ждёт пробела.
+## Последний растаял — и он снова стоит на крыше той самой башни, с которой прыгнул. Круг замкнулся.
 
 const SILENCE := 10.0  # сколько он смотрит на солнце, стоя на коленях
 ## Фраза проступает по частям в одном субтитре: «Это...» → «Это...Всё...» → «Это...Всё...Я».
@@ -19,6 +20,8 @@ const EPILOGUE := [
 	"Теперь это обречено на покой",
 ]
 const SLIDE_FADE := 1.6
+const Structures = preload("res://scripts/structures.gd")
+const ROOF_WAKE := 4.0          # за столько секунд на крыше спадает темнота
 
 var player: CharacterBody3D
 var started := false
@@ -98,12 +101,35 @@ func _next_slide() -> void:
 		tween.tween_property(slide_text, "modulate:a", 0.0, SLIDE_FADE * 0.6).set_trans(Tween.TRANS_SINE)
 		tween.parallel().tween_property(slide_hint, "modulate:a", 0.0, 0.4)
 	if slide >= EPILOGUE.size():
-		return   # конец: только темнота
+		tween.tween_interval(1.5)
+		tween.tween_callback(_back_on_roof)   # последний слайд растаял — снова на крыше
+		return
 	var text: String = EPILOGUE[slide]
 	tween.tween_callback(func() -> void: slide_text.text = text)
 	tween.tween_property(slide_text, "modulate:a", 1.0, SLIDE_FADE).set_trans(Tween.TRANS_SINE)
 	tween.tween_callback(func() -> void: slide_ready = true)
 	tween.tween_property(slide_hint, "modulate:a", 1.0, 0.8)
+
+
+## Снова на крыше самой высокой башни, у того края, с которого он прыгнул, лицом к горе.
+## Звук мира возвращается, темнота плавно спадает — и можно идти.
+func _back_on_roof() -> void:
+	player.global_position = Structures.ROOF_SPOT
+	player.velocity = Vector3.ZERO
+	player.last_safe = Structures.ROOF_SPOT
+	player.lying = 0.0
+	player.kneeling = 0.0
+	player.end_fall()
+	var to := Mountain.CENTER - Structures.ROOF_SPOT
+	var yaw := atan2(-to.x, -to.z)
+	player.rotation.y = yaw
+	player.target_yaw = yaw
+	player.target_pitch = 0.0
+	player.head.rotation.x = 0.0
+	var tween := create_tween()
+	tween.tween_method(_fade_world_sound, -60.0, 0.0, ROOF_WAKE)
+	tween.parallel().tween_property(veil, "color:a", 0.0, ROOF_WAKE).set_trans(Tween.TRANS_SINE)
+	tween.tween_callback(func() -> void: player.locked = false)
 
 
 func _unhandled_input(event: InputEvent) -> void:
