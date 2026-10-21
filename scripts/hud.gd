@@ -33,6 +33,7 @@ var task: PanelContainer
 var subtitle: Label
 var narration: Label
 var narrate_tween: Tween
+var narrate_done := Callable()   # что сделать, когда текущий рассказ растает
 var smoke_hint: Label
 var action_label: Label
 var action_tween: Tween
@@ -142,14 +143,22 @@ func _new_task() -> void:
 func narrate(text: String, done: Callable = Callable()) -> void:
 	if narrate_tween:
 		narrate_tween.kill()
+	_finish_narration()   # прежний рассказ перебит — его «потом» всё равно выполняется
+	narrate_done = done
 	narration.text = text
 	narration.modulate.a = 0.0
 	narrate_tween = create_tween()
 	narrate_tween.tween_property(narration, "modulate:a", 1.0, NARRATE_FADE).set_trans(Tween.TRANS_SINE)
 	narrate_tween.tween_interval(3.0 + text.length() / NARRATE_CPS)
 	narrate_tween.tween_property(narration, "modulate:a", 0.0, NARRATE_FADE).set_trans(Tween.TRANS_SINE)
+	narrate_tween.tween_callback(_finish_narration)
+
+
+func _finish_narration() -> void:
+	var done := narrate_done
+	narrate_done = Callable()
 	if done.is_valid():
-		narrate_tween.tween_callback(done)
+		done.call()
 
 
 ## Новая анимация плашки — прежняя (если ещё идёт) обрывается там, где была.

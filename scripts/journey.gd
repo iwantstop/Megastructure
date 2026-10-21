@@ -20,6 +20,8 @@ const GRADE := [
 
 const WARM_STORY := "Чем дальше я уходил от города, тем заметнее менялись краски мира. Дождь прекратился, холод отступил, а воздух стал сухим и тёплым — кровь на грязных бинтах запекалась, образуя корку"
 const WARM_STORY_AT := 0.68  # на этой отметке пути (как «Путь» в админ-панели) — рассказ о тепле
+const LOOK_BACK_TIME := 2.5  # за столько секунд герой оборачивается к городу и потом обратно к горе
+const CITY_VIEW := Vector3(0, 120, -150)   # куда смотреть, оглядываясь: середина города, на уровне башен
 
 var warm_told := false
 var override := -1.0  # из админ-панели: 0..1 — задать путь вручную, -1 — по положению игрока
@@ -64,9 +66,31 @@ func _process(delta: float) -> void:
 		# Не поверх припадка и не одновременно с субтитром — дождаться, пока тот растает.
 		var hud := Game.hud
 		if hud and not player.locked and hud.subtitle.modulate.a < 0.01:
-			warm_told = true
-			hud.narrate(WARM_STORY)
+			_look_back(hud)
 	_apply(progress)
+
+
+## Рассказ о тепле: герой останавливается и плавно оглядывается на город; пока текст на экране — стоит,
+## управления нет. Текст растаял — так же плавно поворачивается обратно к горе, и можно идти дальше.
+func _look_back(hud: Hud) -> void:
+	warm_told = true
+	player.locked = true
+	_turn_to(CITY_VIEW)
+	hud.narrate(WARM_STORY, func() -> void:
+		var back := _turn_to(Mountain.CENTER + Vector3.UP * 150.0)
+		back.tween_callback(func() -> void: player.locked = false))
+
+
+## Плавный поворот взгляда на точку (по кратчайшей стороне).
+func _turn_to(point: Vector3) -> Tween:
+	var to := point - player.global_position
+	var yaw := atan2(-to.x, -to.z)
+	var pitch := clampf(atan2(to.y - 1.5, Vector2(to.x, to.z).length()), -0.3, 0.3)
+	var from: float = player.target_yaw
+	var tween := create_tween().set_parallel().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tween.tween_property(player, "target_yaw", from + angle_difference(from, yaw), LOOK_BACK_TIME)
+	tween.tween_property(player, "target_pitch", pitch, LOOK_BACK_TIME)
+	return tween.chain()
 
 
 func _apply(k: float) -> void:

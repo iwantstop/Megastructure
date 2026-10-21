@@ -22,6 +22,8 @@ var fits := 0
 var sub_first := -1
 var sub_last := -1
 var narrated := false
+var look_check := 0.0
+var looked_forward := false
 
 
 func _initialize() -> void:
@@ -34,6 +36,13 @@ func _find(script_name: String) -> Node:
 		if c.get_script() and str(c.get_script().resource_path).ends_with(script_name):
 			return c
 	return null
+
+
+## Смотрит ли камера в сторону точки (в пределах 25°).
+func _facing(point: Vector3) -> bool:
+	var forward: Vector3 = -player.camera.global_transform.basis.z
+	var to: Vector3 = point - player.global_position
+	return absf(rad_to_deg(Vector2(forward.x, forward.z).angle_to(Vector2(to.x, to.z)))) < 25.0
 
 
 func _key(code: Key, pressed: bool) -> void:
@@ -69,7 +78,8 @@ func _process(delta: float) -> bool:
 			t = 0.0
 		2:
 			run_time += delta
-			player.target_yaw = 0.0
+			if not player.locked:
+				player.target_yaw = 0.0
 			var busy: bool = seizure.active != -2
 			if busy and not in_fit:
 				in_fit = true
@@ -89,7 +99,15 @@ func _process(delta: float) -> bool:
 					print("FIT   on_floor=%s y=%.2f subtitle=\"%s\"" % [player.is_on_floor(), player.global_position.y, hud.subtitle.text])
 			if hud.narration.modulate.a > 0.99 and not narrated and hud.narration.text.begins_with("Чем"):
 				narrated = true
+				look_check = 4.0
 				print("FIT narration at z=%.0f path=%.0f%%: \"%s...\"" % [player.global_position.z, _find("journey.gd").progress * 100.0, hud.narration.text.substr(0, 40)])
+			if look_check > 0.0:
+				look_check -= delta
+				if look_check <= 0.0:
+					print("FIT looking back: locked=%s speed=%.1f facing city=%s" % [player.locked, Vector2(player.velocity.x, player.velocity.z).length(), _facing(Vector3(0, 0, -150))])
+			if narrated and not looked_forward and not player.locked and hud.narration.modulate.a < 0.01:
+				looked_forward = true
+				print("FIT text gone: locked=%s facing mountain=%s" % [player.locked, _facing(Mountain.CENTER)])
 			if player.global_position.z <= -2350.0 or run_time > 400.0:
 				print("FIT reached mountain: time=%.0fs fits=%d" % [run_time, fits])
 				_key(KEY_W, false)
