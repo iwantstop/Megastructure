@@ -23,7 +23,7 @@ const BLACK_FROM := 0.5     # с этого момента — чернота, �
 const BLACK_TO := 0.7
 const ON_BRIDGE := 16.0     # |x| меньше этого — герой на мосту (весь настил до перил)
 const ZONE := 120.0         # припадок срабатывает в этих метрах после точки — бегом не проскочить
-const MIX_RATE := 22050.0
+const MIX_RATE := Synth.MIX_RATE
 
 var player: CharacterBody3D
 var screen: ShaderMaterial    # материал экранного эффекта (bodycam.gdshader)
@@ -96,7 +96,7 @@ func _process(delta: float) -> void:
 func _watch() -> void:
 	var z := player.global_position.z
 	# Пока посреди экрана рассказ (hud.narrate) — не перебивать его: припадок подождёт.
-	var hud := get_tree().get_first_node_in_group("hud")
+	var hud := Game.hud
 	if hud and hud.narration.modulate.a > 0.01:
 		held = held or (next_stop < stops.size() and stops[next_stop].has("at") and z <= stops[next_stop].at)
 		prev_z = z
@@ -138,9 +138,8 @@ func _start(index: int) -> void:
 	jerk = 0.0
 	moved = false
 	player.locked = true
-	var smoke := get_tree().get_first_node_in_group("smoke")
-	if smoke:
-		smoke.seizure_hit()  # сигарета гаснет, руки потом дрожат
+	if Game.smoke:
+		Game.smoke.seizure_hit()  # сигарета гаснет, руки потом дрожат
 	noise_player.play()
 	noise_playback = noise_player.get_stream_playback()
 
@@ -189,7 +188,7 @@ func _finish() -> void:
 		next_stop = active + 1
 	active = -2
 	prev_z = player.global_position.z
-	var hud := get_tree().get_first_node_in_group("hud")
+	var hud := Game.hud
 	if hud and line != "":
 		hud.say(line)
 	if hud and story != "":

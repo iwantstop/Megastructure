@@ -1,3 +1,4 @@
+class_name MountainFeatures
 extends Node3D
 
 ## То, что стоит на горе поверх ландшафта:
@@ -21,7 +22,6 @@ var cave: Transform3D
 var lamp_light: OmniLight3D
 var tv_light: OmniLight3D
 var t := 0.0
-var cave_inverse: Transform3D
 var last_depth := 0.0
 var rift: AudioStreamPlayer3D
 
@@ -40,7 +40,6 @@ func _ready() -> void:
 			_ledge(f, 10.0)
 	farewell_spot = _ledge(farewell_f, 13.0)
 	cave = Mountain.cave_frame()
-	cave_inverse = cave.affine_inverse()
 	_cave_shell()
 	_apartment()
 	b.finish(self)
@@ -54,7 +53,7 @@ func _process(delta: float) -> void:
 	t += delta
 	# Шагнул в дверной проём квартиры — глухой «разрыв» реальности.
 	if player:
-		var local := cave_inverse * player.global_position
+		var local := Mountain.cave_local(player.global_position)
 		var depth := -local.z
 		if absf(local.x) < 3.0 and last_depth < 14.0 and depth >= 14.0 and rift:
 			rift.play()
@@ -83,14 +82,6 @@ func _rock_material() -> StandardMaterial3D:
 	m.roughness = 0.95
 	m.uv1_triplanar = true
 	m.uv1_scale = Vector3.ONE * 0.18
-	return m
-
-
-func _mat(color: Color, roughness := 0.8, metallic := 0.0) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = color
-	m.roughness = roughness
-	m.metallic = metallic
 	return m
 
 
@@ -175,11 +166,11 @@ func _apartment() -> void:
 	var basis := cave.basis
 	var wallpaper := _shader("res://shaders/wallpaper.gdshader")
 	var parquet := _shader("res://shaders/parquet.gdshader")
-	var dark := _mat(Color(0.05, 0.05, 0.05), 0.5)
-	var fabric := _mat(Color(0.28, 0.06, 0.07), 0.95)
-	var wood := _mat(Color(0.2, 0.12, 0.07), 0.6)
-	var white := _mat(Color(0.85, 0.83, 0.8), 0.4)
-	var frame_mat := _mat(Color(0.12, 0.09, 0.06), 0.7)
+	var dark := Shapes.mat(Color(0.05, 0.05, 0.05), 0.5)
+	var fabric := Shapes.mat(Color(0.28, 0.06, 0.07), 0.95)
+	var wood := Shapes.mat(Color(0.2, 0.12, 0.07), 0.6)
+	var white := Shapes.mat(Color(0.85, 0.83, 0.8), 0.4)
+	var frame_mat := Shapes.mat(Color(0.12, 0.09, 0.06), 0.7)
 
 	b.box(_cave_point(0, 0.05, 22.5), Vector3(11.0, 0.1, 17.0), parquet, basis)
 	# Стены: дальняя целиком, левая — половина, правой нет (там голая скала).
@@ -201,7 +192,7 @@ func _apartment() -> void:
 	for side in [-1.0, 1.0]:
 		b.box(_cave_point(side * 1.2, 0.35, sofa_d), Vector3(0.2, 0.7, 0.95), fabric, basis)
 	# Ковёр, столик, две кружки — «на двоих».
-	b.box(_cave_point(0, 0.11, 24.0), Vector3(3.2, 0.02, 2.4), _mat(Color(0.18, 0.05, 0.05), 1.0), basis, false)
+	b.box(_cave_point(0, 0.11, 24.0), Vector3(3.2, 0.02, 2.4), Shapes.mat(Color(0.18, 0.05, 0.05), 1.0), basis, false)
 	b.box(_cave_point(0, 0.22, 25.6), Vector3(1.2, 0.44, 0.6), wood, basis)
 	for side in [-1.0, 1.0]:
 		b.cylinder(_cave_point(side * 0.22, 0.5, 25.6), 0.045, 0.1, white, basis, false)
@@ -223,7 +214,7 @@ func _apartment() -> void:
 	# Торшер у дивана: тёплый мигающий свет.
 	var lamp_pos := _cave_point(1.9, 0.0, 28.8)
 	b.cylinder(lamp_pos + Vector3.UP * 0.8, 0.02, 1.6, dark, basis, false)
-	var shade := _mat(Color(0.9, 0.7, 0.45), 0.8)
+	var shade := Shapes.mat(Color(0.9, 0.7, 0.45), 0.8)
 	shade.emission_enabled = true
 	shade.emission = Color(1.0, 0.7, 0.4)
 	shade.emission_energy_multiplier = 1.5
@@ -256,7 +247,7 @@ func _figure_on_sofa(sofa_d: float) -> void:
 	body.rotation.y = PI
 	holder.add_child(body)
 	add_child(holder)
-	var plastic := _mat(Color(0.78, 0.74, 0.7), 0.5)
+	var plastic := Shapes.mat(Color(0.78, 0.74, 0.7), 0.5)
 	for mesh in body.find_children("*", "MeshInstance3D", true, false):
 		mesh.material_override = plastic
 	var anim: AnimationPlayer = body.find_child("AnimationPlayer", true, false)

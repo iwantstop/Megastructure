@@ -1,3 +1,4 @@
+class_name Presence
 extends Node3D
 
 ## Ангел героя: тёмный силуэт стройной девушки с каре. Она молчит и показывает дорогу:
@@ -63,7 +64,7 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	if player == null:
-		player = get_tree().get_first_node_in_group("player") as CharacterBody3D
+		player = Game.player
 		return
 	if farewell != Farewell.NONE or _farewell_due():
 		_farewell_step(delta)
@@ -93,7 +94,7 @@ func _physics_process(delta: float) -> void:
 func _farewell_due() -> bool:
 	if farewell_done:
 		return false
-	var features := get_tree().get_first_node_in_group("mountain_features")
+	var features := Game.mountain_features
 	if features == null:
 		return false
 	var spot: Transform3D = features.farewell_spot
@@ -103,7 +104,7 @@ func _farewell_due() -> bool:
 func _farewell_step(delta: float) -> void:
 	match farewell:
 		Farewell.NONE:
-			var spot: Transform3D = get_tree().get_first_node_in_group("mountain_features").farewell_spot
+			var spot: Transform3D = Game.mountain_features.farewell_spot
 			farewell = Farewell.WAITING
 			fading = true  # обычные появления больше не трогают фигуру
 			figure.global_transform = Transform3D(spot.basis, spot.origin)  # спиной к герою, лицом к облакам
@@ -126,14 +127,9 @@ func _farewell_step(delta: float) -> void:
 					figure.basis = Basis(figure.basis.get_rotation_quaternion().slerp(turned.get_rotation_quaternion(), k)), 0.0, 1.0, FAREWELL_TURN).set_trans(Tween.TRANS_SINE)
 				tween.tween_interval(FAREWELL_LOOK)
 				tween.tween_callback(func() -> void:
-					var hud := get_tree().get_first_node_in_group("hud")
-					if hud:
-						hud.say(FAREWELL_LINE, 3.0, 1.5, 2.5)
-					var motif := AudioStreamPlayer.new()  # тихое пианино, пока она растворяется
-					motif.stream = load("res://assets/sounds/piano_motif.ogg")
-					motif.volume_db = -8.0
-					add_child(motif)
-					motif.play())
+					if Game.hud:
+						Game.hud.say(FAREWELL_LINE, 3.0, 1.5, 2.5)
+					Synth.play_once(self, load("res://assets/sounds/piano_motif.ogg"), -8.0, &"Music"))  # тихое пианино, пока она растворяется
 				tween.tween_property(mat, "albedo_color:a", 0.0, FAREWELL_DISSOLVE).set_trans(Tween.TRANS_SINE)
 				tween.tween_callback(func() -> void:
 					if not finale_mode:
@@ -174,16 +170,8 @@ func _waypoint() -> Vector3:
 		return Vector3(0, 0, Structures.PLATFORM.position.y - 40.0)
 	if p.z > Structures.CAUSEWAY_END + 30.0:
 		return Vector3(0, 0, Structures.CAUSEWAY_END)
-	# На горе — точка тропы чуть выше той, где стоит герой.
-	var best := 0.0
-	var best_d := INF
-	for i in 201:
-		var f := i / 200.0
-		var d := Mountain.path_point(f).origin.distance_squared_to(p)
-		if d < best_d:
-			best_d = d
-			best = f
-	return Mountain.path_point(minf(best + 0.02, 1.0)).origin
+	# На горе — точка тропы чуть выше той, где стоит герой (тропа всё время поднимается: доля — по высоте).
+	return Mountain.path_point(minf(Mountain.fraction_at_height(p.y) + 0.02, 1.0)).origin
 
 
 func _try_appear() -> void:
@@ -273,9 +261,8 @@ func _watch_for_notice(delta: float, speak := true) -> void:
 	seen_time = seen_time + delta if looking else 0.0
 	if speak and seen_time >= NOTICE_TIME:
 		noticed = true
-		var hud := get_tree().get_first_node_in_group("hud")
-		if hud:
-			hud.say(LINES[rng.randi() % LINES.size()])
+		if Game.hud:
+			Game.hud.say(LINES[rng.randi() % LINES.size()])
 
 
 ## Растворяется на ходу.
@@ -312,10 +299,10 @@ func _build_figure() -> Node3D:
 
 	var skeleton: Skeleton3D = body.find_child("Skeleton3D", true, false)
 	var head := _attach(skeleton, "DEF-head")
-	_part(head, _sphere(0.118), Vector3(0, 0.13, -0.01))                       # макушка
-	_part(head, _cone(0.118, 0.13, 0.15), Vector3(0, 0.07, -0.012))            # ровный срез каре
+	_part(head, Shapes.sphere_mesh(0.118), Vector3(0, 0.13, -0.01))                       # макушка
+	_part(head, Shapes.cone_mesh(0.118, 0.13, 0.15), Vector3(0, 0.07, -0.012))            # ровный срез каре
 	var hips := _attach(skeleton, "DEF-hips")
-	_part(hips, _cone(0.13, 0.24, 0.5), Vector3(0, -0.22, 0), Vector3(1, 1, 0.8))  # юбка до колен
+	_part(hips, Shapes.cone_mesh(0.13, 0.24, 0.5), Vector3(0, -0.22, 0), Vector3(1, 1, 0.8))  # юбка до колен
 	return root
 
 
@@ -327,31 +314,4 @@ func _attach(skeleton: Skeleton3D, bone: String) -> Node3D:
 
 
 func _part(root: Node3D, mesh: Mesh, pos: Vector3, size_scale := Vector3.ONE) -> void:
-	var part := MeshInstance3D.new()
-	part.mesh = mesh
-	part.material_override = mat
-	part.position = pos
-	part.scale = size_scale
-	root.add_child(part)
-
-
-func _capsule(r: float, h: float) -> CapsuleMesh:
-	var mesh := CapsuleMesh.new()
-	mesh.radius = r
-	mesh.height = h
-	return mesh
-
-
-func _cone(r_top: float, r_bottom: float, h: float) -> CylinderMesh:
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = r_top
-	mesh.bottom_radius = r_bottom
-	mesh.height = h
-	return mesh
-
-
-func _sphere(r: float) -> SphereMesh:
-	var mesh := SphereMesh.new()
-	mesh.radius = r
-	mesh.height = r * 2.0
-	return mesh
+	Shapes.node(root, mesh, pos, mat, true, size_scale)

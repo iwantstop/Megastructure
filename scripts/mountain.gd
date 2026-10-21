@@ -27,6 +27,9 @@ const CAVE_HALF_W := 9.0      # половина ширины выемки, м
 const THETA := LAPS * TAU
 const C := (R_BASE - R_TOP) / THETA  # насколько тропа приближается к центру на радиан
 
+static var _cave_inverse: Transform3D  # пещера — посчитана один раз (см. cave_local)
+static var _cave_known := false
+
 var terrain: Terrain3D
 var cave_inverse: Transform3D  # пещера — посчитана один раз, а не на каждый пиксель карты
 var cave_floor := 0.0
@@ -75,19 +78,37 @@ func _ready() -> void:
 	var pz1 := mini(int(ceilf((CENTER.z + half - origin.z) / SPACING)), depth)
 	var cols := px1 - px0
 	var rows := pz1 - pz0
+	# Рельеф считается построчно на всех ядрах (это самая долгая часть загрузки), в картинки — потом здесь.
+	var lines := []
+	lines.resize(rows)
+	var compute_row := func(row: int) -> void:
+		var z := origin.z + (pz0 + row) * SPACING
+		var line := PackedVector3Array()   # (высота, «тропа», —) и цвет — двумя массивами
+		var tint := PackedColorArray()
+		line.resize(cols)
+		tint.resize(cols)
+		for i in cols:
+			var x := origin.x + (px0 + i) * SPACING
+			var sample := _sample(x, z)
+			line[i] = Vector3(sample.x, sample.y, 0.0)
+			tint[i] = _color(sample.x, sample.y, x, z)
+		lines[row] = [line, tint]          # у каждой строки своя ячейка — потоки не мешают друг другу
+	var task := WorkerThreadPool.add_group_task(compute_row, rows)
+	WorkerThreadPool.wait_for_group_task_completion(task)
 	var collision_heights := PackedFloat32Array()
 	collision_heights.resize(cols * rows)
-	for py in range(pz0, pz1):
-		for px in range(px0, px1):
-			var x := origin.x + px * SPACING
-			var z := origin.z + py * SPACING
-			var sample := _sample(x, z)
-			heights.set_pixel(px, py, Color(sample.x, 0, 0))
+	for row in rows:
+		var line: PackedVector3Array = lines[row][0]
+		var tint: PackedColorArray = lines[row][1]
+		var py := pz0 + row
+		for i in cols:
+			var h := line[i].x
+			heights.set_pixel(px0 + i, py, Color(h, 0, 0))
 			# Коллизия: там, где видна дыра, — просто очень глубоко, без NaN. Масштаб узла — SPACING.
-			collision_heights[(py - pz0) * cols + (px - px0)] = (sample.x if sample.x > ABYSS_CUT else COLLISION_FLOOR) / SPACING
-			colors.set_pixel(px, py, _color(sample.x, sample.y, x, z))
-			if sample.x > ABYSS_CUT:
-				control.set_pixel(px, py, Color(0, 0, 0))
+			collision_heights[row * cols + i] = (h if h > ABYSS_CUT else COLLISION_FLOOR) / SPACING
+			colors.set_pixel(px0 + i, py, tint[i])
+			if h > ABYSS_CUT:
+				control.set_pixel(px0 + i, py, Color(0, 0, 0))
 	terrain.data.import_images([heights, control, colors], origin, 0.0, 1.0)
 	_build_collision(collision_heights, cols, rows, origin + Vector3(px0 * SPACING, 0, pz0 * SPACING))
 
@@ -194,6 +215,14 @@ static func cave_frame() -> Transform3D:
 	return Transform3D(Basis.looking_at(inward, Vector3.UP), origin)
 
 
+## Точка в координатах пещеры: -Z — вглубь горы (глубина = -z), X — поперёк, Y — над полом у входа.
+static func cave_local(p: Vector3) -> Vector3:
+	if not _cave_known:
+		_cave_inverse = cave_frame().affine_inverse()
+		_cave_known = true
+	return _cave_inverse * p
+
+
 ## Доля подъёма, на которой тропа выходит на заданную высоту.
 static func fraction_at_height(h: float) -> float:
 	var lo := 0.0
@@ -234,15 +263,29 @@ func _rock_texture() -> Terrain3DTextureAsset:
 	var size := 512
 	var albedo := Image.create(size, size, false, Image.FORMAT_RGBA8)
 	var normal := Image.create(size, size, false, Image.FORMAT_RGBA8)
-	for y in size:
+	# Строки — параллельно на всех ядрах, как и рельеф.
+	var lines := []
+	lines.resize(size)
+	var compute_row := func(y: int) -> void:
+		var a_row := PackedColorArray()
+		var n_row := PackedColorArray()
+		a_row.resize(size)
+		n_row.resize(size)
 		for x in size:
 			var n := grain.get_noise_2d(x, y) * 0.5 + 0.5
 			var v := lerpf(0.75, 1.0, n)
-			albedo.set_pixel(x, y, Color(v, v, v, n))
+			a_row[x] = Color(v, v, v, n)
 			var dx := grain.get_noise_2d(x + 1, y) - grain.get_noise_2d(x - 1, y)
 			var dy := grain.get_noise_2d(x, y + 1) - grain.get_noise_2d(x, y - 1)
 			var nrm := Vector3(-dx * 2.0, -dy * 2.0, 1.0).normalized() * 0.5 + Vector3.ONE * 0.5
-			normal.set_pixel(x, y, Color(nrm.x, nrm.y, nrm.z, 0.85))
+			n_row[x] = Color(nrm.x, nrm.y, nrm.z, 0.85)
+		lines[y] = [a_row, n_row]
+	var task := WorkerThreadPool.add_group_task(compute_row, size)
+	WorkerThreadPool.wait_for_group_task_completion(task)
+	for y in size:
+		for x in size:
+			albedo.set_pixel(x, y, lines[y][0][x])
+			normal.set_pixel(x, y, lines[y][1][x])
 	albedo.generate_mipmaps()
 	normal.generate_mipmaps()
 	var asset := Terrain3DTextureAsset.new()

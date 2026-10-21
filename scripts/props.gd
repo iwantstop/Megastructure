@@ -16,15 +16,15 @@ var glow: StandardMaterial3D
 
 func _init(random: RandomNumberGenerator) -> void:
 	rng = random
-	wood = _mat(Color(0.36, 0.25, 0.17), 0.7)
-	fabric = _mat(Color(0.42, 0.38, 0.36), 1.0)
-	linen = _mat(Color(0.82, 0.8, 0.76), 0.9)
-	ceramic = _mat(Color(0.9, 0.9, 0.88), 0.3)
-	metal = _mat(Color(0.2, 0.2, 0.22), 0.5)
+	wood = Shapes.mat(Color(0.36, 0.25, 0.17), 0.7)
+	fabric = Shapes.mat(Color(0.42, 0.38, 0.36), 1.0)
+	linen = Shapes.mat(Color(0.82, 0.8, 0.76), 0.9)
+	ceramic = Shapes.mat(Color(0.9, 0.9, 0.88), 0.3)
+	metal = Shapes.mat(Color(0.2, 0.2, 0.22), 0.5)
 	metal.metallic = 0.7
-	clay = _mat(Color(0.55, 0.32, 0.22), 0.9)
-	leaf = _mat(Color(0.22, 0.34, 0.2), 0.8)
-	glow = _mat(Color(1.0, 0.9, 0.75), 1.0)
+	clay = Shapes.mat(Color(0.55, 0.32, 0.22), 0.9)
+	leaf = Shapes.mat(Color(0.22, 0.34, 0.2), 0.8)
+	glow = Shapes.mat(Color(1.0, 0.9, 0.75), 1.0)
 	glow.emission_enabled = true
 	glow.emission = Color(1.0, 0.78, 0.5)
 	glow.emission_energy_multiplier = 3.0
@@ -162,39 +162,13 @@ func _chair(root: Node3D, pos: Vector3, yaw: float) -> void:
 
 # --- Примитивы ---------------------------------------------------------------
 
-func _mat(color: Color, roughness: float) -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = roughness
-	return mat
-
-
-func _part(root: Node3D, mesh: Mesh, pos: Vector3, mat: Material, size_scale := Vector3.ONE) -> void:
-	var part := MeshInstance3D.new()
-	part.mesh = mesh
-	part.material_override = mat
-	part.position = pos
-	part.scale = size_scale
-	root.add_child(part)
-
-
 func _box(root: Node3D, size: Vector3, pos: Vector3, mat: Material) -> void:
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	_part(root, mesh, pos, mat)
+	Shapes.box(root, size, pos, mat)
 
 
 func _cyl(root: Node3D, r_top: float, r_bottom: float, h: float, pos: Vector3, mat: Material) -> void:
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = r_top
-	mesh.bottom_radius = r_bottom
-	mesh.height = h
-	mesh.radial_segments = 16
-	_part(root, mesh, pos, mat)
+	Shapes.cylinder(root, r_top, r_bottom, h, pos, mat)
 
 
 func _ball(root: Node3D, r: float, pos: Vector3, mat: Material, squash := Vector3.ONE) -> void:
-	var mesh := SphereMesh.new()
-	mesh.radius = r
-	mesh.height = r * 2.0
-	_part(root, mesh, pos, mat, squash)
+	Shapes.node(root, Shapes.sphere_mesh(r), pos, mat, true, squash)

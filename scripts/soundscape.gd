@@ -5,10 +5,11 @@ extends Node
 ##   плавно подстраивается под зону (город / высота / мост / гора / над облаками / пещера) и под погоду пути.
 ## - В пещере уличные звуки глохнут (фильтр на шине Ambience), внутри слышны телевизор, часы, гул (Interior).
 ## - Шаги — тихие, синтезированные: асфальт, камень, гравий, паркет; эхо сильнее на мосту и в пещере (шина Steps).
-## - Музыка — генеративное пианино: редкие фразы из нескольких нот в миноре, над облаками светлее.
+## - Музыка — генеративное пианино: редкие фразы из нескольких нот в миноре, над облаками светлее (шина Music
+##   с большим залом-эхом; эхо — только у музыки, а не у всего звука игры).
 
 const Structures = preload("res://scripts/structures.gd")
-const MIX_RATE := 22050.0
+const MIX_RATE := Synth.MIX_RATE
 const STEP_DB := -21.0          # шаги тихие
 const MUSIC_DB := -15.0
 const LOOPS := {
@@ -34,14 +35,13 @@ var music_level := 1.0
 var lowpass: AudioEffectLowPassFilter
 var step_reverb: AudioEffectReverb
 var rng := RandomNumberGenerator.new()
-var cave_inverse: Transform3D
 
 
 ## Шины звука — до того, как кто-то начнёт в них играть.
 static func make_buses() -> void:
 	if AudioServer.get_bus_index("Ambience") >= 0:
 		return
-	for bus_name in ["Ambience", "Interior", "Steps"]:
+	for bus_name in ["Ambience", "Interior", "Steps", "Music"]:
 		AudioServer.add_bus()
 		var i := AudioServer.bus_count - 1
 		AudioServer.set_bus_name(i, bus_name)
@@ -59,6 +59,11 @@ static func make_buses() -> void:
 	echo.damping = 0.4
 	echo.wet = 0.2
 	AudioServer.add_bus_effect(AudioServer.get_bus_index("Steps"), echo)
+	var hall := AudioEffectReverb.new()
+	hall.room_size = 0.85
+	hall.damping = 0.5
+	hall.wet = 0.4
+	AudioServer.add_bus_effect(AudioServer.get_bus_index("Music"), hall)
 
 
 func setup(p_player: CharacterBody3D, p_journey: Node) -> void:
@@ -71,7 +76,6 @@ func _ready() -> void:
 	make_buses()
 	lowpass = AudioServer.get_bus_effect(AudioServer.get_bus_index("Ambience"), 0) as AudioEffectLowPassFilter
 	step_reverb = AudioServer.get_bus_effect(AudioServer.get_bus_index("Steps"), 0) as AudioEffectReverb
-	cave_inverse = Mountain.cave_frame().affine_inverse()
 	for loop_name in LOOPS:
 		var stream: AudioStreamOggVorbis = load(LOOPS[loop_name])
 		stream.loop = true
@@ -123,7 +127,7 @@ func _process(delta: float) -> void:
 
 func _zone() -> String:
 	var p := player.global_position
-	var local := cave_inverse * p
+	var local := Mountain.cave_local(p)
 	if -local.z > 0.0 and -local.z < Mountain.CAVE_DEPTH and absf(local.x) < Mountain.CAVE_HALF_W and absf(local.y) < 8.0:
 		return "cave"
 	if Structures.PLATFORM.has_point(Vector2(p.x, p.z)) and p.y < 400.0:
@@ -145,17 +149,11 @@ func _footsteps(zone: String) -> void:
 	if zone == "mountain" or zone == "high":
 		surface = "gravel"
 	elif zone == "cave":
-		var depth := -(cave_inverse * player.global_position).z
+		var depth := -Mountain.cave_local(player.global_position).z
 		surface = "wood" if depth > 14.0 and depth < 31.0 else "stone"
 	var variants: Array = steps[surface]
-	var p := AudioStreamPlayer.new()
-	p.stream = variants[rng.randi() % variants.size()]
-	p.bus = "Steps"
-	p.volume_db = STEP_DB + (2.0 if player.walk_amount > 1.3 else 0.0) + rng.randf_range(-1.5, 1.5)
-	p.pitch_scale = rng.randf_range(0.92, 1.08)
-	add_child(p)
-	p.play()
-	p.finished.connect(p.queue_free)
+	var volume := STEP_DB + (2.0 if player.walk_amount > 1.3 else 0.0) + rng.randf_range(-1.5, 1.5)
+	Synth.play_once(self, variants[rng.randi() % variants.size()], volume, &"Steps", rng.randf_range(0.92, 1.08))
 
 
 ## Редкие фразы пианино: 2–5 нот случайным шагом по ладу, с паузами; над облаками — светлый лад.
@@ -165,12 +163,7 @@ func _music(delta: float, zone: String) -> void:
 		if phrase_timer <= 0.0:
 			var f: float = phrase.pop_front()
 			if notes.has(f) and music_level > 0.05:
-				var p := AudioStreamPlayer.new()
-				p.stream = notes[f]
-				p.volume_db = MUSIC_DB + linear_to_db(music_level) + rng.randf_range(-3.0, 0.0)
-				add_child(p)
-				p.play()
-				p.finished.connect(p.queue_free)
+				Synth.play_once(self, notes[f], MUSIC_DB + linear_to_db(music_level) + rng.randf_range(-3.0, 0.0), &"Music")
 			phrase_timer = rng.randf_range(0.7, 1.5)
 		return
 	next_phrase -= delta
@@ -186,18 +179,6 @@ func _music(delta: float, zone: String) -> void:
 
 
 # --- Синтез -------------------------------------------------------------------------
-
-func _wav(samples: PackedFloat32Array) -> AudioStreamWAV:
-	var data := PackedByteArray()
-	data.resize(samples.size() * 2)
-	for i in samples.size():
-		data.encode_s16(i * 2, int(clampf(samples[i], -1.0, 1.0) * 32767.0))
-	var wav := AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = int(MIX_RATE)
-	wav.data = data
-	return wav
-
 
 ## Шаг: глухой удар каблука + шорох; у гравия — хруст, у паркета — пустой стук и скрип.
 func _step_sound(surface: String) -> AudioStreamWAV:
@@ -226,7 +207,7 @@ func _step_sound(surface: String) -> AudioStreamWAV:
 				v = sin(TAU * 180.0 * t) * exp(-t * 30.0) * 0.5 + lp * exp(-t * 25.0) * 0.3 \
 					+ sin(TAU * (600.0 + 200.0 * t) * t) * exp(-t * 12.0) * 0.06
 		s[i] = v
-	return _wav(s)
+	return Synth.wav_from(s)
 
 
 ## Нота пианино: несколько гармоник, верхние гаснут быстрее; мягкий удар молоточка.
@@ -241,4 +222,4 @@ func _piano_note(freq: float) -> AudioStreamWAV:
 			+ 0.18 * sin(TAU * freq * 3.004 * t) * exp(-t * 2.6)
 		v *= minf(t * 200.0, 1.0)
 		s[i] = v * 0.35
-	return _wav(s)
+	return Synth.wav_from(s)

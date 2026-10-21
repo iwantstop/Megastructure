@@ -31,45 +31,15 @@ var tween: Tween
 func _ready() -> void:
 	layer = 50
 	process_mode = Node.PROCESS_MODE_ALWAYS   # работает, пока мир на паузе
-	background = ColorRect.new()
-	background.color = Color.BLACK
-	background.set_anchors_preset(Control.PRESET_FULL_RECT)
-	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(background)
-	title = _label(34, Color(0.85, 0.85, 0.85, 0.7))
-	title.text = TITLE
+	background = ScreenText.black(self)
+	title = ScreenText.center(background, TITLE, 34, Color(0.85, 0.85, 0.85, 0.7))
 	title.modulate.a = 0.0
-	text = _label(24, Color(0.88, 0.87, 0.85, TEXT_ALPHA))
-	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text = ScreenText.center(background, "", 24, Color(0.88, 0.87, 0.85, TEXT_ALPHA))
 	text.modulate.a = 0.0
-	hint = Label.new()
-	hint.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	hint.offset_left = -360
-	hint.offset_top = -60
-	hint.offset_right = -36
-	hint.offset_bottom = -30
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	hint.add_theme_font_size_override("font_size", 16)
-	hint.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85, 0.3))
-	hint.text = "загрузка…"
-	background.add_child(hint)
+	hint = ScreenText.corner_hint(background, "загрузка…")
 	var t := create_tween()
 	t.tween_property(title, "modulate:a", 1.0, 1.0).set_trans(Tween.TRANS_SINE)
 	t.tween_callback(func() -> void: title_shown.emit())
-
-
-func _label(size: int, color: Color) -> Label:
-	var label := Label.new()
-	label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	label.offset_left = 220
-	label.offset_right = -220
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", size)
-	label.add_theme_color_override("font_color", color)
-	label.add_theme_constant_override("line_spacing", 8)
-	background.add_child(label)
-	return label
 
 
 ## Мир построен — название тает, начинаются абзацы.

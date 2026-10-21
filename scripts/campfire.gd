@@ -5,7 +5,6 @@ extends Node3D
 
 const REACH := 2.6             # с какого расстояния можно разжечь, м
 const HINT := "Разжечь костёр - E"
-const MIX_RATE := 22050.0
 
 var player: CharacterBody3D
 var lit := false
@@ -24,12 +23,8 @@ func setup(p_player: CharacterBody3D) -> void:
 
 func _ready() -> void:
 	add_to_group("campfire")
-	var stone := StandardMaterial3D.new()
-	stone.albedo_color = Color(0.3, 0.29, 0.28)
-	stone.roughness = 1.0
-	var bark := StandardMaterial3D.new()
-	bark.albedo_color = Color(0.17, 0.1, 0.06)
-	bark.roughness = 1.0
+	var stone := Shapes.mat(Color(0.3, 0.29, 0.28), 1.0)
+	var bark := Shapes.mat(Color(0.17, 0.1, 0.06), 1.0)
 	for i in 10:
 		var a := TAU * i / 10.0
 		var s := MeshInstance3D.new()
@@ -78,9 +73,8 @@ func _process(delta: float) -> void:
 	var close := not lit and flat < REACH and absf(player.global_position.y - global_position.y) < 2.0
 	if close != near:
 		near = close
-		var hud := get_tree().get_first_node_in_group("hud")
-		if hud:
-			hud.action_hint(HINT, near)
+		if Game.hud:
+			Game.hud.action_hint(HINT, near)
 	if lit:
 		heat = move_toward(heat, 1.0, delta / 2.5)
 		var flicker := 0.85 + 0.1 * sin(t * 13.0) + 0.05 * sin(t * 31.0 + 1.3)
@@ -101,9 +95,8 @@ func light_up() -> void:
 		return
 	lit = true
 	near = false
-	var hud := get_tree().get_first_node_in_group("hud")
-	if hud:
-		hud.action_hint(HINT, false)
+	if Game.hud:
+		Game.hud.action_hint(HINT, false)
 	flames.emitting = true
 	sparks.emitting = true
 	crackle.play()
@@ -115,7 +108,7 @@ func _build_fire() -> void:
 	glow.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	glow.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	glow.vertex_color_use_as_albedo = true
-	glow.albedo_texture = _soft_dot()
+	glow.albedo_texture = Shapes.soft_dot()
 	var ramp := Gradient.new()
 	ramp.set_color(0, Color(1.0, 0.85, 0.4, 0.6))
 	ramp.add_point(0.45, Color(1.0, 0.4, 0.1, 0.35))
@@ -180,36 +173,16 @@ func _build_fire() -> void:
 	add_child(sparks)
 
 
-func _soft_dot() -> GradientTexture2D:
-	var g := Gradient.new()
-	g.set_color(0, Color(1, 1, 1, 1))
-	g.set_color(1, Color(1, 1, 1, 0))
-	var tex := GradientTexture2D.new()
-	tex.gradient = g
-	tex.fill = GradientTexture2D.FILL_RADIAL
-	tex.fill_from = Vector2(0.5, 0.5)
-	tex.fill_to = Vector2(1.0, 0.5)
-	return tex
-
-
 ## Треск костра: низкий гул пламени и частые сухие щелчки, петля 3 с.
 func _crackle_sound() -> AudioStreamWAV:
-	var length := int(MIX_RATE * 3.0)
-	var data := PackedByteArray()
-	data.resize(length * 2)
+	var samples := PackedFloat32Array()
+	samples.resize(int(Synth.MIX_RATE * 3.0))
 	var lp := 0.0
 	var pop := 0.0
-	for i in length:
+	for i in samples.size():
 		lp += (randf() * 2.0 - 1.0 - lp) * 0.03
 		if randf() < 0.0012:
 			pop = randf_range(0.4, 0.9)
 		pop *= 0.985
-		var s := clampf(lp * 1.4 + (randf() * 2.0 - 1.0) * pop, -1.0, 1.0)
-		data.encode_s16(i * 2, int(s * 32767.0))
-	var wav := AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = int(MIX_RATE)
-	wav.data = data
-	wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	wav.loop_end = length
-	return wav
+		samples[i] = lp * 1.4 + (randf() * 2.0 - 1.0) * pop
+	return Synth.wav_from(samples, true)

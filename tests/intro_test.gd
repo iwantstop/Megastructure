@@ -1,6 +1,6 @@
 extends SceneTree
 
-## Вступление: после падения герой лежит, через 4 с всплывает подсказка, встаёт только по W.
+## Вступление: после падения и текста во тьме (пробел) герой лежит, через 4 с всплывает подсказка, встаёт только по W.
 ## Запуск: godot --headless --path <проект> -s res://tests/intro_test.gd
 
 var world: Node
@@ -8,6 +8,7 @@ var intro: Node
 var player: CharacterBody3D
 var lying_t := -1.0
 var pressed := false
+var story_skipped := false
 
 
 func _initialize() -> void:
@@ -22,6 +23,12 @@ func _physics_process(delta: float) -> bool:
 				intro = c
 		player = get_first_node_in_group("player")
 		return false
+	if intro.state == intro.State.STORY and not story_skipped:
+		story_skipped = true   # во тьме после удара текст ждёт пробел
+		var key := InputEventKey.new()
+		key.keycode = KEY_SPACE
+		key.pressed = true
+		Input.parse_input_event(key)
 	if intro.state < intro.State.LYING:
 		return false
 	lying_t += delta if lying_t >= 0.0 else 1.0 + delta

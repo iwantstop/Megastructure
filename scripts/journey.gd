@@ -32,7 +32,6 @@ var sun: DirectionalLight3D
 var sky: ProceduralSkyMaterial
 var env: Environment
 var rain: GPUParticles3D
-var ambient: Node
 var bodycam_mat: ShaderMaterial
 var fog: FogMaterial
 var clouds_mat: ShaderMaterial
@@ -44,7 +43,6 @@ func setup(refs: Dictionary) -> void:
 	sky = refs.sky
 	env = refs.env
 	rain = refs.rain
-	ambient = refs.ambient
 	bodycam_mat = refs.bodycam_mat
 	fog = refs.fog
 	clouds_mat = refs.clouds_mat
@@ -64,7 +62,7 @@ func _process(delta: float) -> void:
 	progress = lerpf(progress, target, clampf(delta * 0.6, 0.0, 1.0))
 	if not warm_told and override < 0.0 and progress >= WARM_STORY_AT:
 		# Не поверх припадка и не одновременно с субтитром — дождаться, пока тот растает.
-		var hud := get_tree().get_first_node_in_group("hud")
+		var hud := Game.hud
 		if hud and not player.locked and hud.subtitle.modulate.a < 0.01:
 			warm_told = true
 			hud.narrate(WARM_STORY)
@@ -74,7 +72,6 @@ func _process(delta: float) -> void:
 func _apply(k: float) -> void:
 	var dry := smoothstep(0.0, 0.45, k)
 	rain.amount_ratio = 1.0 - dry
-	ambient.rain_level = 1.0 - dry
 
 	var horizon := COLD_HORIZON.lerp(WARM_HORIZON, k)
 	sky.sky_top_color = COLD_TOP.lerp(WARM_TOP, k)

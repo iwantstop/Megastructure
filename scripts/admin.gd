@@ -2,7 +2,7 @@ extends CanvasLayer
 
 ## Админ-панель. F1 — открыть/закрыть, F — быстро включить/выключить полёт.
 
-const START := Vector3(4, 0.2, 86)
+const START := preload("res://scripts/structures.gd").HERO_SPOT
 const BODYCAM_PARAMS := ["distortion", "aberration", "vignette", "grain"]
 
 var bodycam_base := {}   # исходные значения параметров бодикамеры (для регулятора)

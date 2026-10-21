@@ -1,3 +1,4 @@
+class_name Hud
 extends CanvasLayer
 
 ## Экранный текст поверх игры:
@@ -85,25 +86,14 @@ func _ready() -> void:
 	action_label.text = ""
 	add_child(action_label)
 
-	narration = Label.new()
-	narration.set_anchors_preset(Control.PRESET_FULL_RECT)
-	narration.offset_left = 260
-	narration.offset_right = -260
+	narration = ScreenText.center(self, "", 24, Color(0.95, 0.94, 0.92, TEXT_ALPHA), 260.0)
 	narration.offset_top = 160    # чуть ниже середины кадра
-	narration.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	narration.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	narration.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	narration.add_theme_font_size_override("font_size", 24)
-	narration.add_theme_color_override("font_color", Color(0.95, 0.94, 0.92, TEXT_ALPHA))
-	narration.add_theme_constant_override("line_spacing", 8)
-	narration.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	narration.modulate.a = 0.0
-	add_child(narration)
 
 
 func _process(_delta: float) -> void:
 	if player == null:
-		player = get_tree().get_first_node_in_group("player") as CharacterBody3D
+		player = Game.player
 		return
 	# В самом начале: как только герой встал после падения.
 	if not shown_at_start and not player.locked:

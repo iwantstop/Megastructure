@@ -15,6 +15,9 @@ const STEP_HEIGHT := 0.35     # на сколько можно шагнуть в
 const BREATH_PERIOD := 5.0    # секунд на один вдох-выдох
 const ROLL_STRENGTH := 1.08   # сила крена камеры при поворотах и шагах вбок
 const MAX_FALL_SPEED := 55.0  # предельная скорость падения, м/с
+const FOV := 85.0
+const PANIC_FOV := 18.0      # на столько шире обзор в панике при падении
+const LIE_PITCH := 1.05      # лёжа на спине взгляд запрокинут вверх на столько, рад
 
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var head: Node3D
@@ -72,7 +75,7 @@ func _ready() -> void:
 	add_child(head)
 
 	camera = Camera3D.new()
-	camera.fov = 85
+	camera.fov = FOV
 	camera.far = 8000
 	head.add_child(camera)
 	camera.make_current()
@@ -81,6 +84,24 @@ func _ready() -> void:
 	noise.seed = randi()
 
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## Падение на спине лицом вверх, к крыше башни (вступление, вспышка у пещеры): ходить нельзя, осматриваться — можно.
+func fall_on_back(from: Vector3, speed: float) -> void:
+	locked = true
+	lying = 1.0
+	rotation.y = PI   # лицом к башне
+	target_yaw = PI
+	target_pitch = 0.0
+	global_position = from
+	velocity = Vector3(0, -speed, 0)
+
+
+## Падение кончилось: ни тряски, ни паники.
+func end_fall() -> void:
+	fall_shake = 0.0
+	panic = 0.0
+	panic_look = Vector2.ZERO
 
 
 func set_flying(on: bool) -> void:
@@ -221,14 +242,14 @@ func _process(delta: float) -> void:
 	var breath := sin(breath_phase) * (1.0 - clampf(walk_amount, 0.0, 1.0))
 
 	# Лёжа: камера у самой земли, взгляд в небо, голова чуть завалена набок.
-	var lie := lying * lying * (3.0 - 2.0 * lying)
-	var kneel := kneeling * kneeling * (3.0 - 2.0 * kneeling)
+	var lie := smoothstep(0.0, 1.0, lying)
+	var kneel := smoothstep(0.0, 1.0, kneeling)
 	camera.position = Vector3(
 		sway * 0.014 * amp,
 		-bounce * 0.022 * amp + breath * 0.008 - land_dip - 1.25 * lie - 0.75 * kneel,
 		0.3 * lie)
 	camera.rotation = Vector3(
-		-bounce * 0.004 * amp + breath * 0.003 + _shake(0.0) * 0.01 * shake + 1.05 * lie,
+		-bounce * 0.004 * amp + breath * 0.003 + _shake(0.0) * 0.01 * shake + LIE_PITCH * lie,
 		_shake(100.0) * 0.01 * shake,
 		tilt + strafe_tilt + sway * 0.006 * amp + _shake(200.0) * 0.008 * shake + 0.25 * lie)
 	if panic > 0.0:
@@ -236,7 +257,7 @@ func _process(delta: float) -> void:
 			panic_look.y + _shake(300.0) * 0.07 * panic,
 			panic_look.x + _shake(400.0) * 0.09 * panic,
 			_shake(500.0) * 0.22 * panic)
-	camera.fov = 85.0 + 18.0 * panic
+	camera.fov = FOV + PANIC_FOV * panic
 
 
 ## Плавный шум для тряски: медленная «качка» плюс мелкая дрожь.

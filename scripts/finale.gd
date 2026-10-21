@@ -12,17 +12,14 @@ const WORD_PAUSE := 1.6        # пауза перед следующей час
 const REALIZATION_HOLD := 2.5  # столько вся фраза держится после последнего слова
 const ANGEL_AHEAD := 7.0       # на каком расстоянии перед героем появляется ангел, м
 const SUN_DISTANCE := 1800.0   # где взрывается солнце (в его стороне), м
-const MIX_RATE := 22050.0
 
 var player: CharacterBody3D
-var ambient: AudioStreamPlayer
 var started := false
 var veil: ColorRect
 
 
-func setup(p_player: CharacterBody3D, p_ambient: AudioStreamPlayer) -> void:
+func setup(p_player: CharacterBody3D) -> void:
 	player = p_player
-	ambient = p_ambient
 
 
 func _ready() -> void:
@@ -49,9 +46,8 @@ func start() -> void:
 		return
 	started = true
 	player.locked = true
-	var smoke := get_tree().get_first_node_in_group("smoke")
-	if smoke:
-		smoke.put_away()  # в финале руки пусты
+	if Game.smoke:
+		Game.smoke.put_away()  # в финале руки пусты
 	player.velocity = Vector3.ZERO
 	# Лицом к солнцу: оно низко над облаками, по ту сторону горы от города.
 	player.target_yaw = 0.0
@@ -68,14 +64,14 @@ func start() -> void:
 	tween.parallel().tween_property(player, "lying", 1.0, 4.0).set_trans(Tween.TRANS_SINE)
 	tween.tween_interval(3.0)
 	tween.tween_property(veil, "color:a", 1.0, 8.0)
-	tween.parallel().tween_property(ambient, "volume_db", -60.0, 10.0)
+	tween.parallel().tween_method(_fade_world_sound, 0.0, -60.0, 10.0)  # дождь, ветер и музыка стихают
 	tween.tween_property(veil, "color", Color(0, 0, 0, 1), 4.0)
 
 
 ## На коленях, лицом к солнцу, — он понимает: ангела не было. Фраза дополняется по слову;
 ## строка с самого начала разложена целиком, поэтому, дополняясь, не сдвигается по центру.
 func _realize() -> void:
-	var hud := get_tree().get_first_node_in_group("hud")
+	var hud := Game.hud
 	if hud == null:
 		return
 	_angel_appears()
@@ -95,13 +91,12 @@ func _realize() -> void:
 
 ## Куда смотреть на солнце: по направлению солнечного света (свет идёт вдоль -Z лампы — солнце в стороне +Z).
 func _sun_dir() -> Vector3:
-	var sun := get_tree().get_first_node_in_group("sun") as DirectionalLight3D
-	return sun.global_transform.basis.z.normalized() if sun else Vector3(0, 0.15, -1).normalized()
+	return Game.sun.global_transform.basis.z.normalized() if Game.sun else Vector3(0, 0.15, -1).normalized()
 
 
 ## Ангел — перед героем, со стороны солнца, лицом к нему.
 func _angel_appears() -> void:
-	var presence := get_tree().get_first_node_in_group("presence")
+	var presence := Game.presence
 	if presence == null:
 		return
 	var flat := _sun_dir()
@@ -166,27 +161,24 @@ func _sun_explodes() -> void:
 		core.queue_free()
 		ring.queue_free())
 
-	var boom := AudioStreamPlayer.new()
-	boom.stream = _boom_sound()
-	boom.volume_db = 2.0
-	add_child(boom)
-	boom.play()
+	Synth.play_once(self, _boom_sound(), 2.0, &"Music")
 
 
 ## Гул взрыва: низкий удар и долгий раскатистый шум.
 func _boom_sound() -> AudioStreamWAV:
-	var length := int(MIX_RATE * 5.0)
-	var data := PackedByteArray()
-	data.resize(length * 2)
+	var samples := PackedFloat32Array()
+	samples.resize(int(Synth.MIX_RATE * 5.0))
 	var lp := 0.0
-	for i in length:
-		var t := i / MIX_RATE
+	for i in samples.size():
+		var t := i / Synth.MIX_RATE
 		lp += (randf() * 2.0 - 1.0 - lp) * 0.02
 		var body := sin(TAU * 38.0 * t) * exp(-t * 1.6) * 0.7
 		var rumble := lp * 6.0 * exp(-t * 0.7) * minf(t * 8.0, 1.0)
-		data.encode_s16(i * 2, int(clampf(body + rumble, -1.0, 1.0) * 32767.0))
-	var wav := AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = int(MIX_RATE)
-	wav.data = data
-	return wav
+		samples[i] = body + rumble
+	return Synth.wav_from(samples)
+
+
+## Звук мира (дождь, ветер — шина Ambience; пианино — Music) уходит в тишину.
+func _fade_world_sound(db: float) -> void:
+	for bus in ["Ambience", "Music"]:
+		AudioServer.set_bus_volume_db(AudioServer.get_bus_index(bus), db)

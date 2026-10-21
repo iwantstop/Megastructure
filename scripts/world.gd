@@ -15,6 +15,9 @@ const FACADE_SHADER = preload("res://shaders/facade.gdshader")
 const HOLOGRAM_SHADER = preload("res://shaders/hologram.gdshader")
 const SIGN_WORDS := ["БАР", "ОТЕЛЬ", "ЛЮБОВЬ", "ДЕНЬГИ", "НОЧЬ", "СОН", "КЛУБ", "ЕДА", "24 ЧАСА", "ЗАЙМЫ", "РАЙ"]
 
+## Режим запуска: "" — обычная игра; "demo", "bench", "map" — скриптовые режимы (-- --demo и т. п.).
+var mode := ""
+var under_test := false     # запущен тестом (-s): ни пролога, ни лишнего
 var rng := RandomNumberGenerator.new()
 var sky_mat: ProceduralSkyMaterial
 var env: Environment
@@ -24,6 +27,7 @@ var fog_origin := Vector3(0, 10, -150)
 var searchlights: Array[SpotLight3D] = []
 var lifts: Array[Node3D] = []
 var _last_mark := 0
+var _build_time := 0
 var time := 0.0
 var built := false
 var shared_noise: NoiseTexture2D
@@ -37,7 +41,7 @@ const AD_TEXTS := [
 	"ДОВЕРЯЙ ТОЛЬКО СЕБЕ", "ПОБЕДИ БЛИЖНЕГО", "ЗАБУДЬ", "КРЕДИТ НА ЖИЗНЬ",
 	"БУДЬ ЛУЧШЕ ДРУГИХ", "ВОЗЬМИ ВСЁ", "НИКТО НЕ УЗНАЕТ", "НАСЛАЖДАЙСЯ",
 ]
-const LOADING_TITLE := "Где мой ангел?"
+const LOADING_TITLE: String = preload("res://scripts/prologue.gd").TITLE
 const NEON_COLORS := [
 	Color(1.0, 0.1, 0.55), Color(0.1, 0.85, 1.0), Color(1.0, 0.15, 0.1),
 	Color(1.0, 0.55, 0.1), Color(0.6, 0.2, 1.0), Color(0.9, 0.95, 1.0),
@@ -47,11 +51,14 @@ const NEON_COLORS := [
 ## Экран загрузки: мир строится несколько секунд — пусть это время будет чёрным экраном
 ## с названием истории, а не заставкой движка. Потом экран тает прямо в падение.
 func _ready() -> void:
-	# Пролог — только в настоящей игре: в скриптовых режимах (демо, бенчмарк, карта) и тестах (-s) его нет.
 	var args := OS.get_cmdline_user_args()
-	var plain_game := not ("--demo" in args or "--bench" in args or "--map" in args) and not ("-s" in OS.get_cmdline_args() or "--script" in OS.get_cmdline_args())
-	plain_game = plain_game or "--prologue" in args   # тест пролога (tests/prologue_view.gd)
-	if plain_game:
+	for m in ["demo", "bench", "map"]:
+		if "--" + m in args:
+			mode = m
+	under_test = "-s" in OS.get_cmdline_args() or "--script" in OS.get_cmdline_args()
+	# Пролог — только в настоящей игре: в скриптовых режимах (демо, бенчмарк, карта) и тестах его нет.
+	var with_prologue := (mode == "" and not under_test) or "--prologue" in args   # --prologue — тест пролога
+	if with_prologue:
 		var prologue = preload("res://scripts/prologue.gd").new()
 		add_child(prologue)
 		await prologue.title_shown        # название проявилось — теперь можно надолго занять поток постройкой
@@ -76,41 +83,22 @@ func _ready() -> void:
 func _make_loading_screen() -> CanvasLayer:
 	var layer := CanvasLayer.new()
 	layer.layer = 50
-	var root := ColorRect.new()
-	root.color = Color.BLACK
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(root)
-	var title := Label.new()
-	title.text = LOADING_TITLE
-	title.set_anchors_preset(Control.PRESET_FULL_RECT)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 30)
-	title.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85, 0.6))
-	root.add_child(title)
-	var hint := Label.new()
-	hint.text = "загрузка…"
-	hint.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	hint.offset_left = -200
-	hint.offset_top = -60
-	hint.offset_right = -36
-	hint.offset_bottom = -30
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	hint.add_theme_font_size_override("font_size", 16)
-	hint.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85, 0.3))
-	root.add_child(hint)
+	var root := ScreenText.black(layer)
+	ScreenText.center(root, LOADING_TITLE, 30, Color(0.85, 0.85, 0.85, 0.6))
+	ScreenText.corner_hint(root, "загрузка…")
 	add_child(layer)
 	return layer
 
 
 func _build() -> void:
 	rng.seed = WORLD_SEED
+	Game.clear()
+	_last_mark = Time.get_ticks_msec()  # время постройки — с этого момента, без запуска движка и пролога
 	preload("res://scripts/soundscape.gd").make_buses()  # шины звука — до всех, кто в них играет
 	var mats := _make_materials()
 	_make_environment()
 	var sun := _make_sun()
-	sun.add_to_group("sun")  # финал: солнце взрывается за ангелом
+	Game.sun = sun  # финал: солнце взрывается за ангелом
 	var bodycam := _make_bodycam()
 
 	_mark("материалы и окружение")
@@ -138,10 +126,12 @@ func _build() -> void:
 	_mark("лифты, вещи, свет")
 
 	var player := _spawn_player()
+	Game.player = player
 	_make_paint_strokes(player.camera)
 	var smoke = preload("res://scripts/smoke.gd").new()  # сигареты «в руках» — перед камерой
 	smoke.setup(player)
 	player.camera.add_child(smoke)
+	Game.smoke = smoke
 	var rain := _make_rain(player)
 	_make_ads(structures.ads)
 	_make_signs(structures.signs)
@@ -155,22 +145,22 @@ func _build() -> void:
 	var features = preload("res://scripts/mountain_features.gd").new()  # уступы, пещера, квартира, костёр
 	features.setup(player)
 	add_child(features)
+	Game.mountain_features = features
 	_mark("гора")
 	var clouds_mat := _make_clouds()
 
 	var dream = preload("res://scripts/dream.gd").new()
-	dream.setup(sun, sky_mat, vignettes)
+	dream.setup(vignettes)
 	add_child(dream)
 	var presence = preload("res://scripts/presence.gd").new()
 	add_child(presence)
-	var ambient = preload("res://scripts/ambient.gd").new()
-	add_child(ambient)
+	Game.presence = presence
 	var falls = preload("res://scripts/falls.gd").new()
 	falls.setup(structures.roofs)
 	add_child(falls)
 
 	var journey = preload("res://scripts/journey.gd").new()
-	journey.setup({"player": player, "sun": sun, "sky": sky_mat, "env": env, "rain": rain, "ambient": ambient,
+	journey.setup({"player": player, "sun": sun, "sky": sky_mat, "env": env, "rain": rain,
 		"bodycam_mat": bodycam.get_child(0).material, "fog": fog_volume.material, "clouds_mat": clouds_mat})
 	add_child(journey)
 	var soundscape = preload("res://scripts/soundscape.gd").new()  # звук мира по зонам, шаги, музыка
@@ -181,11 +171,10 @@ func _build() -> void:
 	add_child(intro)
 	add_child(preload("res://scripts/bandages.gd").new())
 	var finale = preload("res://scripts/finale.gd").new()
-	finale.setup(player, ambient)
+	finale.setup(player)
 	add_child(finale)
 
-	var args := OS.get_cmdline_user_args()
-	var scripted := "--demo" in args or "--bench" in args or "--map" in args
+	var scripted := mode != ""
 	var seizure = preload("res://scripts/seizure.gd").new()
 	seizure.setup(player, bodycam.get_child(0).material)
 	if not scripted:
@@ -199,18 +188,19 @@ func _build() -> void:
 		"journey": journey, "intro": intro, "finale": finale, "seizure": seizure})
 	if not scripted:
 		add_child(admin)  # в демо и бенчмарке панель не нужна: случайное F1 не испортит запись
-	if not ("--bench" in args or "--map" in args):
-		add_child(preload("res://scripts/hud.gd").new())  # задание и субтитры; в демо — тоже, для видеоотчёта
+	if mode != "bench" and mode != "map":
+		Game.hud = preload("res://scripts/hud.gd").new()
+		add_child(Game.hud)  # задание и субтитры; в демо — тоже, для видеоотчёта
 
 	_mark("всё остальное")
 
-	if "--map" in OS.get_cmdline_user_args():
+	if mode == "map":
 		add_child(preload("res://scripts/map.gd").new())
-	if "--bench" in OS.get_cmdline_user_args():
+	if mode == "bench":
 		var bench = preload("res://scripts/bench.gd").new()
 		bench.setup(player, intro)
 		add_child(bench)
-	if "--demo" in OS.get_cmdline_user_args():
+	if mode == "demo":
 		var demo = preload("res://scripts/demo.gd").new()
 		demo.setup(player, intro, structures.access_points, lifts, finale)
 		add_child(demo)
@@ -219,7 +209,8 @@ func _build() -> void:
 ## Пишет в лог, сколько занял очередной этап постройки мира.
 func _mark(stage: String) -> void:
 	var now := Time.get_ticks_msec()
-	print("[мир] %s: %d мс (всего %d мс)" % [stage, now - _last_mark, now])
+	_build_time += now - _last_mark
+	print("[мир] %s: %d мс (всего %d мс)" % [stage, now - _last_mark, _build_time])
 	_last_mark = now
 
 
@@ -250,13 +241,13 @@ func _make_materials() -> Dictionary:
 	var brick := func(color: Color) -> ShaderMaterial:
 		return concrete.call({"base_color": color, "brick_size": 0.25, "streaks": 0.5, "grime": 0.7, "variation": 0.25})
 
-	signal_amber = _plain(Color(0.25, 0.15, 0.02), 0.4, 0.0)
+	signal_amber = Shapes.mat(Color(0.25, 0.15, 0.02), 0.4, 0.0)
 	signal_amber.emission_enabled = true
 	signal_amber.emission = Color(1.0, 0.6, 0.1)
-	beacon = _glow(Color(0.3, 0.02, 0.02), Color(1.0, 0.05, 0.03), 4.0)
+	beacon = Shapes.glow(Color(0.3, 0.02, 0.02), Color(1.0, 0.05, 0.03), 4.0)
 	# Неон: тёмная подложка и сильное свечение (у «неосвещаемых» материалов Godot свечение не рисует).
 	for c in NEON_COLORS:
-		neon.append(_glow(c * 0.15, c, 6.0))
+		neon.append(Shapes.glow(c * 0.15, c, 6.0))
 		neon_energy.append(6.0)
 
 	# Фасады небоскрёбов: окна рисует шейдер. Разный шаг окон, рёбра, доля горящих окон.
@@ -280,7 +271,7 @@ func _make_materials() -> Dictionary:
 	return {
 		"neon": neon,
 		"beacon": beacon,
-		"lamp_warm": _glow(Color(0.4, 0.3, 0.2), Color(1.0, 0.75, 0.45), 3.0),
+		"lamp_warm": Shapes.glow(Color(0.4, 0.3, 0.2), Color(1.0, 0.75, 0.45), 3.0),
 		"arcology": [
 			arcology.call(Color(0.3, 0.31, 0.33), Vector2(1.6, 3.2), Vector2(0.6, 0.5), 5.0, 0.3),
 			arcology.call(Color(0.22, 0.23, 0.26), Vector2(1.2, 3.2), Vector2(0.7, 0.6), 0.0, 0.25),
@@ -305,33 +296,33 @@ func _make_materials() -> Dictionary:
 			"tint_amount": 0.0, "streaks": 0.0, "puddles": 1.4, "roughness_value": 0.35}),  # мокрый, в ледяной корке
 		"sidewalk": concrete.call({"base_color": Color(0.5, 0.5, 0.5), "panel_size": 1.5, "seam_width": 0.025,
 			"seam_dark": 0.35, "grime": 0.6, "puddles": 1.0, "roughness_value": 0.5}),
-		"soil": _plain(Color(0.2, 0.18, 0.15), 1.0, 0.0),
-		"glass": _plain(Color(0.08, 0.1, 0.12), 0.06, 0.4),
-		"glass_lit": _glow(Color(0.35, 0.28, 0.18), Color(1.0, 0.75, 0.45), 0.6),
-		"door": _plain(Color(0.22, 0.16, 0.12), 0.7, 0.0),
-		"paint": _plain(Color(0.75, 0.74, 0.7), 0.8, 0.0),
-		"paint_yellow": _plain(Color(0.7, 0.58, 0.25), 0.8, 0.0),
-		"rubber": _plain(Color(0.06, 0.06, 0.06), 0.9, 0.0),
-		"bark": _plain(Color(0.17, 0.15, 0.13), 1.0, 0.0),
-		"wood_pole": _plain(Color(0.3, 0.25, 0.2), 0.95, 0.0),
-		"wire": _plain(Color(0.05, 0.05, 0.05), 0.8, 0.0),
-		"hydrant": _plain(Color(0.5, 0.12, 0.08), 0.6, 0.0),
-		"fence": _plain(Color(0.35, 0.36, 0.34), 0.7, 0.4),
-		"billboard": _plain(Color(0.62, 0.6, 0.55), 0.9, 0.0),
-		"signal_off": _plain(Color(0.05, 0.05, 0.05), 0.3, 0.0),
+		"soil": Shapes.mat(Color(0.2, 0.18, 0.15), 1.0, 0.0),
+		"glass": Shapes.mat(Color(0.08, 0.1, 0.12), 0.06, 0.4),
+		"glass_lit": Shapes.glow(Color(0.35, 0.28, 0.18), Color(1.0, 0.75, 0.45), 0.6),
+		"door": Shapes.mat(Color(0.22, 0.16, 0.12), 0.7, 0.0),
+		"paint": Shapes.mat(Color(0.75, 0.74, 0.7), 0.8, 0.0),
+		"paint_yellow": Shapes.mat(Color(0.7, 0.58, 0.25), 0.8, 0.0),
+		"rubber": Shapes.mat(Color(0.06, 0.06, 0.06), 0.9, 0.0),
+		"bark": Shapes.mat(Color(0.17, 0.15, 0.13), 1.0, 0.0),
+		"wood_pole": Shapes.mat(Color(0.3, 0.25, 0.2), 0.95, 0.0),
+		"wire": Shapes.mat(Color(0.05, 0.05, 0.05), 0.8, 0.0),
+		"hydrant": Shapes.mat(Color(0.5, 0.12, 0.08), 0.6, 0.0),
+		"fence": Shapes.mat(Color(0.35, 0.36, 0.34), 0.7, 0.4),
+		"billboard": Shapes.mat(Color(0.62, 0.6, 0.55), 0.9, 0.0),
+		"signal_off": Shapes.mat(Color(0.05, 0.05, 0.05), 0.3, 0.0),
 		"signal_amber": signal_amber,
 		"car_paints": [
-			_plain(Color(0.42, 0.12, 0.1), 0.35, 0.3), _plain(Color(0.65, 0.6, 0.5), 0.4, 0.2),
-			_plain(Color(0.35, 0.37, 0.4), 0.35, 0.4), _plain(Color(0.14, 0.18, 0.28), 0.35, 0.3),
-			_plain(Color(0.72, 0.72, 0.7), 0.4, 0.2), _plain(Color(0.2, 0.28, 0.22), 0.4, 0.2),
+			Shapes.mat(Color(0.42, 0.12, 0.1), 0.35, 0.3), Shapes.mat(Color(0.65, 0.6, 0.5), 0.4, 0.2),
+			Shapes.mat(Color(0.35, 0.37, 0.4), 0.35, 0.4), Shapes.mat(Color(0.14, 0.18, 0.28), 0.35, 0.3),
+			Shapes.mat(Color(0.72, 0.72, 0.7), 0.4, 0.2), Shapes.mat(Color(0.2, 0.28, 0.22), 0.4, 0.2),
 		],
 		"signs": [
-			_plain(Color(0.45, 0.15, 0.12), 0.7, 0.0), _plain(Color(0.15, 0.25, 0.35), 0.7, 0.0),
-			_plain(Color(0.6, 0.55, 0.4), 0.7, 0.0), _plain(Color(0.2, 0.3, 0.2), 0.7, 0.0),
+			Shapes.mat(Color(0.45, 0.15, 0.12), 0.7, 0.0), Shapes.mat(Color(0.15, 0.25, 0.35), 0.7, 0.0),
+			Shapes.mat(Color(0.6, 0.55, 0.4), 0.7, 0.0), Shapes.mat(Color(0.2, 0.3, 0.2), 0.7, 0.0),
 		],
 		"awnings": [
-			_plain(Color(0.4, 0.15, 0.13), 1.0, 0.0), _plain(Color(0.2, 0.3, 0.28), 1.0, 0.0),
-			_plain(Color(0.55, 0.5, 0.42), 1.0, 0.0),
+			Shapes.mat(Color(0.4, 0.15, 0.13), 1.0, 0.0), Shapes.mat(Color(0.2, 0.3, 0.28), 1.0, 0.0),
+			Shapes.mat(Color(0.55, 0.5, 0.42), 1.0, 0.0),
 		],
 		"concrete": concrete.call({"base_color": Color(0.6, 0.6, 0.62), "streaks": 0.6, "tint_amount": 0.15}),
 		"concrete_dark": concrete.call({"base_color": Color(0.38, 0.39, 0.42), "streaks": 0.4, "tint_amount": 0.1,
@@ -349,26 +340,10 @@ func _make_materials() -> Dictionary:
 			"seam_dark": 0.4, "grime": 0.0, "puddles": 1.0}),
 		"plaster": concrete.call({"base_color": Color(0.68, 0.66, 0.62), "streaks": 0.7, "grime": 0.8, "tint_amount": 0.25}),
 		"plaster_cool": concrete.call({"base_color": Color(0.6, 0.63, 0.66), "streaks": 0.6, "grime": 0.7, "tint_amount": 0.2}),
-		"metal": _plain(Color(0.24, 0.25, 0.27), 0.45, 0.6),
-		"slit": _plain(Color(0.07, 0.075, 0.08), 0.7, 0.0),
-		"plastic": _plain(Color(0.86, 0.85, 0.83), 0.35, 0.0),
+		"metal": Shapes.mat(Color(0.24, 0.25, 0.27), 0.45, 0.6),
+		"slit": Shapes.mat(Color(0.07, 0.075, 0.08), 0.7, 0.0),
+		"plastic": Shapes.mat(Color(0.86, 0.85, 0.83), 0.35, 0.0),
 	}
-
-
-func _plain(color: Color, roughness: float, metallic: float) -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = roughness
-	mat.metallic = metallic
-	return mat
-
-
-func _glow(color: Color, emission: Color, energy: float) -> StandardMaterial3D:
-	var mat := _plain(color, 0.3, 0.0)
-	mat.emission_enabled = true
-	mat.emission = emission
-	mat.emission_energy_multiplier = energy
-	return mat
 
 
 ## Мигающий жёлтый на всех светофорах, мерцание неона и дрейф клочьев тумана.
@@ -594,8 +569,8 @@ func _make_searchlights() -> void:
 ## Лифты в башнях доступа. Стартуют с разных остановок, чтобы не ездить синхронно.
 ## На каждом уровне у шахты — створка: красная и закрытая, пока платформы нет; зелёная и открытая, когда она тут.
 func _make_elevators(list: Array[Dictionary], mats: Dictionary) -> void:
-	var red := _glow(Color(0.3, 0.02, 0.02), Color(1.0, 0.1, 0.05), 3.0)
-	var green := _glow(Color(0.02, 0.3, 0.05), Color(0.2, 1.0, 0.3), 3.0)
+	var red := Shapes.glow(Color(0.3, 0.02, 0.02), Color(1.0, 0.1, 0.05), 3.0)
+	var green := Shapes.glow(Color(0.02, 0.3, 0.05), Color(0.2, 1.0, 0.3), 3.0)
 	var bar := BoxMesh.new()
 	bar.size = Vector3(1.6, 0.06, 0.06)
 	var gate_shape := BoxShape3D.new()
@@ -711,7 +686,7 @@ func _hologram_projector(base: Vector3, top_y: float, color: Color) -> void:
 	drum.bottom_radius = 1.4
 	drum.height = 1.2
 	body.mesh = drum
-	body.material_override = _plain(Color(0.06, 0.06, 0.07), 0.4, 0.6)
+	body.material_override = Shapes.mat(Color(0.06, 0.06, 0.07), 0.4, 0.6)
 	body.position = base + Vector3.UP * 0.6
 	add_child(body)
 	var lens := MeshInstance3D.new()
@@ -748,7 +723,7 @@ func _hologram_projector(base: Vector3, top_y: float, color: Color) -> void:
 
 ## Горящие билборды: светящиеся панели с лозунгами, мерцают, освещают мокрые улицы.
 func _make_ads(spots: Array[Dictionary]) -> void:
-	var dark := _plain(Color(0.03, 0.03, 0.035), 0.4, 0.0)
+	var dark := Shapes.mat(Color(0.03, 0.03, 0.035), 0.4, 0.0)
 	var lights_left := 28
 	for ad in spots:
 		var xform: Transform3D = ad.xform
@@ -819,27 +794,13 @@ func _make_window_lights(points: Array[Vector3]) -> void:
 		add_child(light)
 
 
-# --- Игрок и подсказка -------------------------------------------------------
+# --- Игрок -------------------------------------------------------
 
 func _spawn_player() -> CharacterBody3D:
 	var player: CharacterBody3D = preload("res://scripts/player.gd").new()
-	player.position = Vector3(4, 0.2, 86)  # у подножия самой высокой башни
+	player.position = Structures.HERO_SPOT  # у подножия самой высокой башни
 	add_child(player)
 	return player
-
-
-func _make_hint() -> void:
-	var layer := CanvasLayer.new()
-	layer.layer = 2
-	var label := Label.new()
-	label.text = "WASD — идти   Shift — бежать   Space — прыжок   F1 — админ-панель   Esc — освободить мышь"
-	label.position = Vector2(30, 30)
-	label.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
-	layer.add_child(label)
-	add_child(layer)
-	var tween := create_tween()
-	tween.tween_interval(8.0)
-	tween.tween_property(label, "modulate:a", 0.0, 3.0)
 
 
 ## Не рисовать объект дальше distance метров (0 — без ограничения); у края — плавное исчезновение.

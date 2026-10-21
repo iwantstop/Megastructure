@@ -31,7 +31,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if player == null:
-		player = get_tree().get_first_node_in_group("player") as Node3D
+		player = Game.player
 		return
 	if falling:
 		velocity.y -= 9.8 * delta

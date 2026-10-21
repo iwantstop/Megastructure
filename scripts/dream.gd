@@ -1,33 +1,17 @@
 extends Node
 
-## «Сон»: мир меняется почти незаметно, чем дольше гуляешь.
-## - солнце медленно опускается, небо и туман теплеют;
-## - иногда вещь, оставшаяся далеко позади, снова оказывается где-то рядом.
-
-const DUSK_TIME := 1500.0   # за сколько секунд «день» доходит до заката
+## «Сон»: иногда вещь, оставшаяся далеко позади, снова оказывается где-то рядом.
+## (Небом и светом управляет путь героя — journey.gd.)
 
 var time_scale := 1.0       # меняется из админ-панели
-var sun: DirectionalLight3D
-var sky: ProceduralSkyMaterial
 var vignettes: Array[Node3D] = []
 var player: CharacterBody3D
-var elapsed := 0.0
 var next_shift := 180.0
 var rng := RandomNumberGenerator.new()
-var sun_color_start: Color
-var sun_pitch_start: float
-var sky_top_start: Color
-var horizon_start: Color
 
 
-func setup(p_sun: DirectionalLight3D, p_sky: ProceduralSkyMaterial, p_vignettes: Array[Node3D]) -> void:
-	sun = p_sun
-	sky = p_sky
+func setup(p_vignettes: Array[Node3D]) -> void:
 	vignettes = p_vignettes
-	sun_color_start = sun.light_color
-	sun_pitch_start = sun.rotation_degrees.x
-	sky_top_start = sky.sky_top_color
-	horizon_start = sky.sky_horizon_color
 
 
 func _ready() -> void:
@@ -36,13 +20,9 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	if player == null:
-		player = get_tree().get_first_node_in_group("player") as CharacterBody3D
+		player = Game.player
 		return
-	var step := delta * time_scale
-	elapsed += step
-
-	# Небом и светом теперь управляет путь героя (journey.gd), здесь только «сон».
-	next_shift -= step
+	next_shift -= delta * time_scale
 	if next_shift <= 0.0:
 		next_shift = rng.randf_range(150, 240)
 		shift_vignette()
