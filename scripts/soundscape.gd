@@ -11,6 +11,7 @@ extends Node
 const Structures = preload("res://scripts/structures.gd")
 const MIX_RATE := Synth.MIX_RATE
 const STEP_DB := -21.0          # шаги тихие
+const CITY_STEP_BOOST := 3.0    # под дождём в городе — чуть громче, иначе их не слышно
 const MUSIC_DB := -15.0
 const LOOPS := {
 	"rain": "res://assets/sounds/rain_city.ogg",
@@ -153,6 +154,8 @@ func _footsteps(zone: String) -> void:
 		surface = "wood" if depth > 14.0 and depth < 31.0 else "stone"
 	var variants: Array = steps[surface]
 	var volume := STEP_DB + (2.0 if player.walk_amount > 1.3 else 0.0) + rng.randf_range(-1.5, 1.5)
+	if zone == "city":
+		volume += CITY_STEP_BOOST  # в городе шаги перекрывает дождь
 	Synth.play_once(self, variants[rng.randi() % variants.size()], volume, &"Steps", rng.randf_range(0.92, 1.08))
 
 
@@ -193,8 +196,11 @@ func _step_sound(surface: String) -> AudioStreamWAV:
 		var v := 0.0
 		match surface:
 			"concrete":
-				lp += (noise - lp) * 0.35
-				v = sin(TAU * thump_f * t) * exp(-t * 45.0) * 0.6 + lp * exp(-t * 30.0) * 0.5
+				# Мокрый асфальт: щелчок каблука, шлепок по воде и немного глухого удара — слышно сквозь дождь.
+				lp += (noise - lp) * 0.55
+				var click := noise * exp(-t * 90.0) * 0.45
+				var splash := lp * exp(-t * 22.0) * (0.75 if t > 0.012 else 0.35)
+				v = sin(TAU * thump_f * t) * exp(-t * 45.0) * 0.45 + click + splash
 			"stone":
 				lp += (noise - lp) * 0.5
 				v = sin(TAU * thump_f * 1.3 * t) * exp(-t * 50.0) * 0.5 + lp * exp(-t * 35.0) * 0.6

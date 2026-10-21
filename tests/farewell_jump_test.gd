@@ -84,7 +84,10 @@ func _process(delta: float) -> bool:
 			if not said_sorry and hud.subtitle.text == "Прости меня..." and hud.subtitle.modulate.a > 0.9:
 				said_sorry = true
 				_shot("sorry")
-				print("JUMP angel said \"Прости меня...\" at y=%.0f" % player.global_position.y)
+				var crying := false
+				for v in presence.figure.find_children("*", "AudioStreamPlayer3D", true, false):
+					crying = crying or v.playing
+				print("JUMP angel said \"Прости меня...\" at y=%.0f, crying=%s" % [player.global_position.y, crying])
 			if seizure.active != -2:
 				print("JUMP glitch at y=%.0f, ~%.0f m after the farewell ledge, farewell done=%s" % [
 					player.global_position.y, walked, presence.farewell_done])

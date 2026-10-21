@@ -14,15 +14,15 @@ const STOPS := [
 	{"path_at": 0.012, "path_to": Mountain.CAVE_AT - 0.014, "line": ""},
 	# Через 100 м после уступа, где ангел исчез («Прости меня...»), — ещё ближе к вершине, и над облаками — солнце.
 	# Доли тропы считаются в _ready (from_height + after_m → path_at, to_height → path_to).
-	{"from_height": 428.0, "after_m": 110.0, "to_height": Mountain.PEAK - 40.0, "reach": 10.0, "line": "",   # срабатывает за reach до точки — ~100 м
-		"story": "Поднявшись выше облаков, он впервые увидел солнце — его лучи, тёплые и живые, коснулись измождённого лица."},
+	{"from_height": 428.0, "after_m": 100.0, "to_height": Mountain.PEAK - 40.0, "line": "",
+		"story": "Поднявшись выше облаков, я впервые увидел солнце — его лучи, тёплые и живые, коснулись моего измождённого лица."},
 ]
-const PATH_REACH := 40.0    # насколько близко к точке на тропе надо подойти, м (с запасом — не проскочить)
+const PATH_REACH := 15.0    # дальше этого от оси тропы (по горизонтали) — герой не на тропе, м
 const DURATION := 1.2
 const BLACK_FROM := 0.5     # с этого момента — чернота, в ней перенос
 const BLACK_TO := 0.7
 const ON_BRIDGE := 16.0     # |x| меньше этого — герой на мосту (весь настил до перил)
-const ZONE := 120.0         # припадок срабатывает в этих метрах после точки — бегом не проскочить
+const ZONE := 120.0         # ушёл дальше точки больше чем на столько (перенесли) — она пройдена, м
 const MIX_RATE := Synth.MIX_RATE
 
 var player: CharacterBody3D
@@ -33,7 +33,6 @@ var t := 0.0
 var jerk := 0.0               # до следующего «срыва» кадра
 var level := 0.0
 var moved := false
-var prev_z := 0.0
 var held := false             # припадок отложен, пока на экране рассказ, — потом не пропускать его
 var rng := RandomNumberGenerator.new()
 var stops: Array = []         # STOPS с рассчитанными долями тропы
@@ -56,7 +55,6 @@ func _ready() -> void:
 		if stop.has("from_height"):
 			stop.path_at = Mountain.fraction_after(Mountain.fraction_at_height(stop.from_height), stop.after_m)
 			stop.path_to = Mountain.fraction_at_height(stop.to_height)
-	prev_z = player.global_position.z
 	var generator := AudioStreamGenerator.new()
 	generator.mix_rate = MIX_RATE
 	generator.buffer_length = 0.1
@@ -90,38 +88,39 @@ func _process(delta: float) -> void:
 	_fill_noise()
 
 
-## Герой идёт к горе пешком и вошёл в зону точки (ZONE метров за ней) — припадок. Зона, а не линия:
-## даже если кадр подвис и герой «перешагнул» линию, припадок не пропадёт. Если героя перенесли
-## дальше зоны (админ-панель) — эта точка считается пройденной.
+## Следующая точка: герой до неё дошёл — пора припадка; но если посреди экрана рассказ (hud.narrate),
+## припадок ждёт, пока тот растает, и не пропадает. Если героя перенесли далеко за точку (админ-панель,
+## вспышка у пещеры) — она считается пройденной.
 func _watch() -> void:
-	var z := player.global_position.z
-	# Пока посреди экрана рассказ (hud.narrate) — не перебивать его: припадок подождёт.
-	var hud := Game.hud
-	if hud and hud.narration.modulate.a > 0.01:
-		held = held or (next_stop < stops.size() and stops[next_stop].has("at") and z <= stops[next_stop].at)
-		prev_z = z
+	if next_stop >= stops.size():
 		return
-	if held and next_stop < stops.size() and absf(player.global_position.x) < ON_BRIDGE and not player.locked and not player.flying:
+	var stop: Dictionary = stops[next_stop]
+	if not held and _far_past(stop):
+		next_stop += 1
+		return
+	if _reached(stop):
+		held = true
+	var narrating := Game.hud != null and Game.hud.narration.modulate.a > 0.01
+	if held and not narrating and not player.flying and not player.locked:
 		held = false
 		_start(next_stop)
-		prev_z = z
-		return
-	held = false
-	if next_stop < stops.size() and not player.flying and not player.locked:
-		var stop: Dictionary = stops[next_stop]
-		if stop.has("path_at"):
-			# Точка на тропе горы: подошёл к ней — припадок; уже выше — считается пройденной.
-			var spot := Mountain.path_point(stop.path_at).origin
-			var p := player.global_position
-			if p.y > spot.y + 30.0:
-				next_stop += 1
-			elif Vector2(p.x - spot.x, p.z - spot.z).length() < stop.get("reach", PATH_REACH) and absf(p.y - spot.y) < 12.0:
-				_start(next_stop)
-		elif z < stop.at - ZONE:
-			next_stop += 1
-		elif z <= stop.at and prev_z - z < 5.0 and absf(player.global_position.x) < ON_BRIDGE:
-			_start(next_stop)
-	prev_z = z
+
+
+## Дошёл до точки: на мосту — до отметки z (и стоит на настиле), на тропе — поднялся до её высоты, стоя на тропе.
+func _reached(stop: Dictionary) -> bool:
+	var p := player.global_position
+	if stop.has("path_at"):
+		var spot := Mountain.path_point(stop.path_at).origin
+		var on_path := Mountain.path_point(Mountain.fraction_at_height(p.y)).origin
+		return p.y >= spot.y - 0.5 and Vector2(p.x - on_path.x, p.z - on_path.z).length() < PATH_REACH
+	return p.z <= stop.at and absf(p.x) < ON_BRIDGE
+
+
+func _far_past(stop: Dictionary) -> bool:
+	var p := player.global_position
+	if stop.has("path_at"):
+		return p.y > Mountain.path_point(stop.path_at).origin.y + 30.0
+	return p.z < stop.at - ZONE
 
 
 ## Из админ-панели: следующий припадок прямо сейчас (на мосту — с переносом, иначе только эффект).
@@ -187,7 +186,6 @@ func _finish() -> void:
 	if active >= 0:
 		next_stop = active + 1
 	active = -2
-	prev_z = player.global_position.z
 	var hud := Game.hud
 	if hud and line != "":
 		hud.say(line)

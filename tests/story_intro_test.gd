@@ -93,7 +93,7 @@ func _process(delta: float) -> bool:
 				narr_seen = stage_t
 				_shot("angel_story")
 				print("STORY narration at %.1f s after W: \"%s...\"  task=\"%s\"" % [stage_t, hud.narration.text.substr(0, 40), hud.task.get_child(0).text])
-			if narr_seen > 0.0 and hud.narration.modulate.a < 0.01 and hud.task.modulate.a > 0.99:
+			if narr_seen > 0.0 and hud.narration.modulate.a < 0.01 and hud.task.modulate.a > 0.99 and hud.task.get_child(0).text == hud.TASK_FIND:
 				_shot("new_task")
 				print("STORY after narration (%.1f s on screen): task=\"%s\" visible" % [stage_t - narr_seen, hud.task.get_child(0).text])
 				return true

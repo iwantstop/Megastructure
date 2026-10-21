@@ -32,7 +32,7 @@ var kneeling := 0.0   # 1 — стоит на коленях (финал на в
 var fall_shake := 0.0  # тряска от встречного ветра при падении (вступление)
 var turn_roll_scale := 1.0  # крен при повороте камеры (админ-панель): 1 — как задумано, 0 — без крена
 var bob_scale := 1.0   # покачивание при ходьбе (админ-панель): 1 — как задумано, 0 — нет
-var panic := 0.0       # паника в падении: крупная дрожь, кувырок по крену, шире обзор (вступление)
+var panic := 0.0       # паника в падении: тело медленно заваливается, ветер треплет, шире обзор (вступление)
 var panic_look := Vector2.ZERO  # резкие рывки головы в панике: x — вбок, y — вверх-вниз, рад
 
 # Куда смотрим по мыши; тело и голова плавно догоняют.
@@ -253,11 +253,23 @@ func _process(delta: float) -> void:
 		_shake(100.0) * 0.01 * shake,
 		tilt + strafe_tilt + sway * 0.006 * amp + _shake(200.0) * 0.008 * shake + 0.25 * lie)
 	if panic > 0.0:
+		# Падение как в Mirror's Edge: тяжёлое тело медленно заваливается и кувыркается (низкие частоты),
+		# голова плавно поворачивается (panic_look), а поверх — мелкая дрожь от встречного ветра.
 		camera.rotation += Vector3(
-			panic_look.y + _shake(300.0) * 0.07 * panic,
-			panic_look.x + _shake(400.0) * 0.09 * panic,
-			_shake(500.0) * 0.22 * panic)
+			panic_look.y + _tumble(300.0) * 0.16 * panic + _buffet(310.0) * 0.006 * panic,
+			panic_look.x + _tumble(400.0) * 0.14 * panic + _buffet(410.0) * 0.006 * panic,
+			_tumble(500.0) * 0.3 * panic + _buffet(510.0) * 0.004 * panic)
 	camera.fov = FOV + PANIC_FOV * panic
+
+
+## Медленное заваливание тела в падении: плавно, около одного «качка» за 2–3 секунды.
+func _tumble(offset: float) -> float:
+	return noise.get_noise_2d(shake_time * 1.6, offset)
+
+
+## Дрожь от встречного ветра: быстрая и мелкая.
+func _buffet(offset: float) -> float:
+	return noise.get_noise_2d(shake_time * 70.0, offset)
 
 
 ## Плавный шум для тряски: медленная «качка» плюс мелкая дрожь.

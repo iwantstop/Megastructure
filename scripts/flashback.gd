@@ -45,7 +45,8 @@ func _process(delta: float) -> void:
 		return
 	t += delta
 	var speed := -player.velocity.y
-	player.fall_shake = clampf(speed / 50.0, 0.0, 1.0) * 2.5
+	player.fall_shake = clampf(speed / 50.0, 0.0, 1.0) * 0.5
+	player.panic = clampf(0.35 + speed / 55.0, 0.0, 1.0)   # тело заваливается, как во вступлении
 	wind.fill(clampf(speed / 55.0, 0.5, 1.0))
 	if t >= FALL_TIME and not waking:
 		waking = true

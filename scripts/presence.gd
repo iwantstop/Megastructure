@@ -29,6 +29,7 @@ const FAREWELL_TURN := 1.8       # медленный поворот к геро
 const FAREWELL_LOOK := 1.8       # смотрит на него, с
 const FAREWELL_DISSOLVE := 3.5
 const FAREWELL_LINE := "Прости меня..."
+const CRY_DB := -12.0          # плач при прощании — тихий, издалека
 
 enum Farewell { NONE, WAITING, TURNING, GONE }
 
@@ -47,6 +48,7 @@ var farewell_done := false
 var finale_mode := false       # финал: фигуру больше ничто не прячет
 var farewell_tween: Tween
 var rng := RandomNumberGenerator.new()
+var cry: AudioStreamWAV         # плач при прощании — готовится в фоне при загрузке (cry.gd)
 
 
 func _ready() -> void:
@@ -60,6 +62,7 @@ func _ready() -> void:
 	figure = _build_figure()
 	figure.visible = false
 	add_child(figure)
+	WorkerThreadPool.add_task(func() -> void: cry = preload("res://scripts/cry.gd").sound())
 
 
 func _physics_process(delta: float) -> void:
@@ -129,6 +132,7 @@ func _farewell_step(delta: float) -> void:
 				tween.tween_callback(func() -> void:
 					if Game.hud:
 						Game.hud.say(FAREWELL_LINE, 3.0, 1.5, 2.5)
+					_cry()
 					Synth.play_once(self, load("res://assets/sounds/piano_motif.ogg"), -8.0, &"Music"))  # тихое пианино, пока она растворяется
 				tween.tween_property(mat, "albedo_color:a", 0.0, FAREWELL_DISSOLVE).set_trans(Tween.TRANS_SINE)
 				tween.tween_callback(func() -> void:
@@ -138,6 +142,21 @@ func _farewell_step(delta: float) -> void:
 					farewell_done = true)
 		_:
 			pass
+
+
+## Тихий плач — от неё самой, пока она растворяется.
+func _cry() -> void:
+	if cry == null:
+		return
+	var voice := AudioStreamPlayer3D.new()
+	voice.stream = cry
+	voice.volume_db = CRY_DB
+	voice.unit_size = 8.0
+	voice.bus = &"Music"   # с эхом-залом — звучит тише и дальше
+	voice.position = Vector3.UP * 1.5
+	figure.add_child(voice)
+	voice.play()
+	voice.finished.connect(voice.queue_free)
 
 
 ## Финал: она появляется в последний раз — на вершине, перед героем, со стороны солнца, лицом к нему.
