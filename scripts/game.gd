@@ -10,6 +10,9 @@ static var smoke: Smoke
 static var presence: Presence
 static var mountain_features: MountainFeatures
 static var sun: DirectionalLight3D
+static var world: Node3D
+static var env: Environment
+static var bodycam_mat: ShaderMaterial
 
 
 ## Новый мир — справочник заново (прежние части, если были, уже удалены вместе со старым миром).
@@ -20,3 +23,6 @@ static func clear() -> void:
 	presence = null
 	mountain_features = null
 	sun = null
+	world = null
+	env = null
+	bodycam_mat = null

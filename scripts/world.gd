@@ -65,7 +65,7 @@ func _ready() -> void:
 		_build()
 		built = true
 		get_tree().paused = true           # падение не начинается, пока не дочитан пролог
-		prologue.play_text()
+		prologue.show_menu()   # главное меню; «Начать» — пролог
 		await prologue.finished
 		get_tree().paused = false
 		return
@@ -93,6 +93,7 @@ func _make_loading_screen() -> CanvasLayer:
 func _build() -> void:
 	rng.seed = WORLD_SEED
 	Game.clear()
+	Game.world = self
 	_last_mark = Time.get_ticks_msec()  # время постройки — с этого момента, без запуска движка и пролога
 	preload("res://scripts/soundscape.gd").make_buses()  # шины звука — до всех, кто в них играет
 	var mats := _make_materials()
@@ -100,6 +101,8 @@ func _build() -> void:
 	var sun := _make_sun()
 	Game.sun = sun  # финал: солнце взрывается за ангелом
 	var bodycam := _make_bodycam()
+	Game.env = env
+	Game.bodycam_mat = bodycam.get_child(0).material
 
 	_mark("материалы и окружение")
 
@@ -192,6 +195,10 @@ func _build() -> void:
 		Game.hud = preload("res://scripts/hud.gd").new()
 		add_child(Game.hud)  # задание и субтитры; в демо — тоже, для видеоотчёта
 
+	Settings.load_saved()   # громкость, мышь, камера, качество — как выбрал игрок
+	Settings.apply()
+	if not scripted:
+		add_child(preload("res://scripts/pause_menu.gd").new())   # Esc — пауза и настройки
 	_mark("всё остальное")
 
 	if mode == "map":

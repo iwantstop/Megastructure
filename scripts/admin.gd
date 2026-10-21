@@ -3,9 +3,7 @@ extends CanvasLayer
 ## Админ-панель. F1 — открыть/закрыть, F — быстро включить/выключить полёт.
 
 const START := preload("res://scripts/structures.gd").HERO_SPOT
-const BODYCAM_PARAMS := ["distortion", "aberration", "vignette", "grain"]
 
-var bodycam_base := {}   # исходные значения параметров бодикамеры (для регулятора)
 var player: CharacterBody3D
 var dream: Node
 var presence: Node
@@ -80,13 +78,7 @@ func _ready() -> void:
 ## Сила бодикамеры: искажение линзы, расслоение цвета, виньетка и зерно — от исходных значений шейдера
 ## (100% — как задумано, 0% — чистая картинка, 200% — вдвое сильнее).
 func _on_bodycam_strength(v: float) -> void:
-	var mat := (bodycam.get_child(0) as ColorRect).material as ShaderMaterial
-	for param in BODYCAM_PARAMS:
-		if not bodycam_base.has(param):
-			bodycam_base[param] = mat.get_shader_parameter(param)
-			if bodycam_base[param] == null:
-				bodycam_base[param] = RenderingServer.shader_get_parameter_default(mat.shader.get_rid(), param)
-		mat.set_shader_parameter(param, bodycam_base[param] * v / 100.0)
+	Settings.set_bodycam_strength(v / 100.0)   # только на этот запуск; насовсем — в настройках (Esc)
 
 
 func _on_paint(on: bool) -> void:

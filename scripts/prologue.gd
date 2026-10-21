@@ -1,7 +1,7 @@
 extends CanvasLayer
 
-## Экран загрузки с прологом. Чёрный экран, название «Где мой ангел?» — под ним строится мир; потом
-## абзацы предыстории по одному медленно проявляются и тают. Каждый остаётся на экране,
+## Экран загрузки с прологом. Чёрный экран, название «Где мой ангел?» — под ним строится мир; потом под
+## названием главное меню («Начать», «Настройки», «Выход»). «Начать» — абзацы предыстории по одному медленно проявляются и тают. Каждый остаётся на экране,
 ## пока игрок не нажмёт пробел. Пробел — следующий абзац; после последнего — «…и бросился вниз.» —
 ## пробел начинает игру. Пока идёт пролог, игра на паузе: падение не начинается.
 
@@ -26,6 +26,8 @@ var index := -1
 var shown_for := 0.0
 var playing := false
 var tween: Tween
+var menu: VBoxContainer
+var settings: Control
 
 
 func _ready() -> void:
@@ -42,7 +44,50 @@ func _ready() -> void:
 	t.tween_callback(func() -> void: title_shown.emit())
 
 
-## Мир построен — название тает, начинаются абзацы.
+## Мир построен — под названием проявляется главное меню.
+func show_menu() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	menu = MenuUi.column(background, 110.0)
+	MenuUi.button(menu, "Начать", _start)
+	MenuUi.button(menu, "Настройки", _open_settings)
+	MenuUi.button(menu, "Выход", func() -> void: get_tree().quit())
+	menu.modulate.a = 0.0
+	settings = preload("res://scripts/settings_panel.gd").new()
+	settings.hide()
+	settings.back.connect(_close_settings)
+	background.add_child(settings)
+	var fade := create_tween()
+	fade.tween_property(hint, "modulate:a", 0.0, 0.6)
+	fade.parallel().tween_property(menu, "modulate:a", 1.0, 1.0).set_trans(Tween.TRANS_SINE)
+	menu.get_child(0).grab_focus()
+
+
+## «Начать»: меню тает — начинается пролог.
+func _start() -> void:
+	for b in menu.get_children():
+		b.disabled = true
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	var fade := create_tween()
+	fade.tween_property(menu, "modulate:a", 0.0, 0.6)
+	fade.tween_callback(menu.queue_free)
+	hint.modulate.a = 1.0
+	play_text()
+
+
+func _open_settings() -> void:
+	menu.hide()
+	title.hide()
+	settings.open()
+
+
+func _close_settings() -> void:
+	settings.hide()
+	menu.show()
+	title.show()
+	menu.get_child(1).grab_focus()
+
+
+## «Начать» — название тает, начинаются абзацы.
 func play_text() -> void:
 	playing = true
 	hint.text = "пробел — дальше"

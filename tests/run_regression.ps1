@@ -73,6 +73,15 @@ $roll0 = $out -match "turn roll 0%: max roll=0\.00"
 $bob0 = $out -match "bob 0%: walking speed=[\d.]+, camera offset=0\.0000"
 Check "регуляторы: крен 0% и покачивание 0% выключают эффект" ($roll0 -and $bob0)
 
+# --- Меню и настройки ---------------------------------------------------------------
+Say "`n== Меню и настройки" "Cyan"
+$out = Run "tests/menu_test.gd" @("--", "--prologue")
+foreach ($l in ($out | Where-Object { $_ -match "^MENU [✔✘]" })) {
+    $text = $l.Substring(5)
+    if ($text.StartsWith("✔")) { $script:passed++ ; Say $text "Green" } else { $script:failed++ ; Say $text "Red" }
+}
+if (-not ($out -match "^MENU ИТОГ")) { Check "тест меню дошёл до конца" $false }
+
 # --- 3. Вся игра по порядку ---------------------------------------------------------
 Say "`n== Прохождение всей игры (несколько минут)" "Cyan"
 $out = Run "tests/regression_test.gd" @("--", "--prologue")

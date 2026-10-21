@@ -250,5 +250,5 @@ func _boom_sound() -> AudioStreamWAV:
 
 ## Звук мира (дождь, ветер — шина Ambience; пианино — Music) уходит в тишину.
 func _fade_world_sound(db: float) -> void:
-	for bus in ["Ambience", "Music"]:
-		AudioServer.set_bus_volume_db(AudioServer.get_bus_index(bus), db)
+	Settings.world_fade_db = db      # поверх громкости, выбранной в настройках
+	Settings.apply_audio()

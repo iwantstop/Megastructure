@@ -31,6 +31,8 @@ var lying := 0.0      # 1 — лежит на спине и смотрит в н
 var kneeling := 0.0   # 1 — стоит на коленях (финал на вершине)
 var fall_shake := 0.0  # тряска от встречного ветра при падении (вступление)
 var turn_roll_scale := 1.0  # крен при повороте камеры (админ-панель): 1 — как задумано, 0 — без крена
+var mouse_scale := 1.0  # чувствительность мыши из настроек: 1 — как задумано
+var invert_y := false
 var bob_scale := 1.0   # покачивание при ходьбе (админ-панель): 1 — как задумано, 0 — нет
 var panic := 0.0       # паника в падении: тело медленно заваливается, ветер треплет, шире обзор (вступление)
 var panic_look := Vector2.ZERO  # резкие рывки головы в панике: x — вбок, y — вверх-вниз, рад
@@ -114,11 +116,12 @@ func set_noclip(on: bool) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Esc — пауза (pause_menu.gd): там же мышь отпускается.
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		target_yaw -= event.relative.x * MOUSE_SENSITIVITY
-		target_pitch = clampf(target_pitch - event.relative.y * MOUSE_SENSITIVITY, deg_to_rad(-89), deg_to_rad(89))
-	elif event is InputEventKey and event.pressed and event.physical_keycode == KEY_ESCAPE:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		var sensitivity := MOUSE_SENSITIVITY * mouse_scale
+		target_yaw -= event.relative.x * sensitivity
+		var dy: float = -event.relative.y if invert_y else event.relative.y
+		target_pitch = clampf(target_pitch - dy * sensitivity, deg_to_rad(-89), deg_to_rad(89))
 	elif event is InputEventMouseButton and event.pressed:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 

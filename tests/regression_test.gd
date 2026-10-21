@@ -178,6 +178,9 @@ func _prologue() -> void:
 		if hero:
 			break
 		await process_frame
+	var menu_ready := await _until(func() -> bool: return prologue.menu != null and prologue.menu.modulate.a > 0.9, 20.0)
+	_check("главное меню: «Начать», «Настройки», «Выход»", menu_ready and prologue.menu.get_child_count() == 3)
+	prologue.menu.get_child(0).emit_signal("pressed")   # «Начать»
 	for i in prologue.PARAGRAPHS.size():
 		var shown := await _until(func() -> bool: return prologue.index == i and prologue.text.modulate.a > 0.99, 20.0)
 		var y_before: float = hero.global_position.y

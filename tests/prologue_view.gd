@@ -16,6 +16,7 @@ var last_index := -2
 var start_y := 0.0
 var ok := true
 var finished_at := -1.0
+var started := false
 
 
 func _initialize() -> void:
@@ -64,6 +65,9 @@ func _process(delta: float) -> bool:
 			print("PROLOGUE RESULT: ", "OK" if ok and fell > 20.0 else "FAIL")
 			return true
 		return false
+	if prologue and prologue.menu and not started:   # главное меню — «Начать»
+		started = true
+		prologue.menu.get_child(0).emit_signal("pressed")
 	if prologue == null or prologue.index < 0:
 		return t > 120.0
 	if prologue.index != last_index:
