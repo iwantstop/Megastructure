@@ -158,6 +158,7 @@ func _build() -> void:
 	var presence = preload("res://scripts/presence.gd").new()
 	add_child(presence)
 	Game.presence = presence
+	add_child(preload("res://scripts/creature.gd").new())   # существо у перил моста
 	var falls = preload("res://scripts/falls.gd").new()
 	falls.setup(structures.roofs)
 	add_child(falls)

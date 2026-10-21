@@ -316,6 +316,13 @@ func _bridge() -> void:
 		_check("припадок %d: на %.0f → перенос на %.0f" % [i + 1, stop.at, stop.to], hit and absf(at_z - stop.at) < 15.0 and absf(player.global_position.z - stop.to) < 5.0,
 			"сработал на %.0f, теперь %.0f, %.2f с" % [at_z, player.global_position.z, length])
 		if i == 0:
+			var creature := _find("creature.gd")
+			_check("у перил стоит существо, смотрит в бездну (Idle)", creature != null and creature.visible and not creature.gone
+				and creature.body.find_child("AnimationPlayer", true, false).current_animation == "pack/Idle")
+		if i == 1:
+			var creature := _find("creature.gd")
+			_check("подошёл к существу — исчезло", creature != null and creature.gone and not creature.visible)
+		if i == 0:
 			_check("припадок гасит сигарету, руки дрожат", (not cigarette_was_lit or smoke.state == smoke.State.UNLIT) and smoke.tremor > 0.9,
 				"было: %s" % ("горела" if cigarette_was_lit else "не курил"))
 		await _until(func() -> bool: return hud.subtitle.modulate.a > 0.9, 5.0)
