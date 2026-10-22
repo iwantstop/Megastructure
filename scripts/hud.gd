@@ -110,6 +110,11 @@ func _process(_delta: float) -> void:
 		hint_tween.tween_property(smoke_hint, "modulate:a", 1.0, 0.8).set_trans(Tween.TRANS_SINE)
 		hint_tween.tween_interval(SMOKE_HINT_TIME)
 		hint_tween.tween_property(smoke_hint, "modulate:a", 0.0, 0.8).set_trans(Tween.TRANS_SINE)
+		# Следом — «Снимок - C» (снимки бодикамеры, photos.gd), тоже на 5 секунд.
+		hint_tween.tween_callback(func() -> void: smoke_hint.text = Photos.HINT)
+		hint_tween.tween_property(smoke_hint, "modulate:a", 1.0, 0.8).set_trans(Tween.TRANS_SINE)
+		hint_tween.tween_interval(SMOKE_HINT_TIME)
+		hint_tween.tween_property(smoke_hint, "modulate:a", 0.0, 0.8).set_trans(Tween.TRANS_SINE)
 		# Когда подсказки отработали — вера в ангела, и задание меняется.
 		var story_tween := create_tween()
 		story_tween.tween_interval(ANGEL_STORY_AT)

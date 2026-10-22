@@ -82,6 +82,15 @@ foreach ($l in ($out | Where-Object { $_ -match "^MENU [✔✘]" })) {
 }
 if (-not ($out -match "^MENU ИТОГ")) { Check "тест меню дошёл до конца" $false }
 
+# --- Новые механики ------------------------------------------------------------------
+Say "`n== Звук, скамейка, окурок, снимки, реклама" "Cyan"
+$out = Run "tests/features_test.gd"
+foreach ($l in ($out | Where-Object { $_ -match "^FEAT [✔✘]" })) {
+    $text = $l.Substring(5)
+    if ($text.StartsWith("✔")) { $script:passed++ ; Say $text "Green" } else { $script:failed++ ; Say $text "Red" }
+}
+if (-not ($out -match "^FEAT ИТОГ")) { Check "тест новых механик дошёл до конца" $false }
+
 # --- 3. Вся игра по порядку ---------------------------------------------------------
 Say "`n== Прохождение всей игры (несколько минут)" "Cyan"
 $out = Run "tests/regression_test.gd" @("--", "--prologue")

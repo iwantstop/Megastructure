@@ -94,6 +94,7 @@ func _build() -> void:
 	rng.seed = WORLD_SEED
 	Game.clear()
 	Game.world = self
+	Progress.load_saved(not under_test or "--persist" in OS.get_cmdline_user_args())   # пачка сигарет — с прошлого раза
 	_last_mark = Time.get_ticks_msec()  # время постройки — с этого момента, без запуска движка и пролога
 	preload("res://scripts/soundscape.gd").make_buses()  # шины звука — до всех, кто в них играет
 	var mats := _make_materials()
@@ -159,6 +160,10 @@ func _build() -> void:
 	add_child(presence)
 	Game.presence = presence
 	add_child(preload("res://scripts/creature.gd").new())   # существо у перил моста
+	add_child(preload("res://scripts/bench_spot.gd").new())  # скамейка и торшер у перил моста
+	var ad_voices = preload("res://scripts/ad_voices.gd").new()   # билборды иногда говорят фразами из пролога
+	ad_voices.setup(structures.ads)
+	add_child(ad_voices)
 	var falls = preload("res://scripts/falls.gd").new()
 	falls.setup(structures.roofs)
 	add_child(falls)
@@ -167,6 +172,7 @@ func _build() -> void:
 	journey.setup({"player": player, "sun": sun, "sky": sky_mat, "env": env, "rain": rain,
 		"bodycam_mat": bodycam.get_child(0).material, "fog": fog_volume.material, "clouds_mat": clouds_mat})
 	add_child(journey)
+	Game.journey = journey
 	var soundscape = preload("res://scripts/soundscape.gd").new()  # звук мира по зонам, шаги, музыка
 	soundscape.setup(player, journey)
 	add_child(soundscape)
@@ -194,7 +200,8 @@ func _build() -> void:
 		add_child(admin)  # в демо и бенчмарке панель не нужна: случайное F1 не испортит запись
 	if mode != "bench" and mode != "map":
 		Game.hud = preload("res://scripts/hud.gd").new()
-		add_child(Game.hud)  # задание и субтитры; в демо — тоже, для видеоотчёта
+		add_child(Game.hud)
+		add_child(preload("res://scripts/photos.gd").new())   # C — снимок бодикамерой (в финале — на слайдах)  # задание и субтитры; в демо — тоже, для видеоотчёта
 
 	Settings.load_saved()   # громкость, мышь, камера, качество — как выбрал игрок
 	Settings.apply()

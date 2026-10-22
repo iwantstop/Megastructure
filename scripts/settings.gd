@@ -23,6 +23,7 @@ const DEFAULTS := {
 
 static var values := DEFAULTS.duplicate()
 static var world_fade_db := 0.0              # финал: звук мира стихает поверх громкости игрока
+static var duck_db := 0.0                    # припадок: звук мира пропадает и возвращается (seizure.gd)
 static var _bodycam_base := {}
 
 
@@ -48,6 +49,7 @@ static func load_saved() -> void:
 		if arg.begins_with("--quality="):
 			values["quality"] = ["low", "medium", "high"].find(arg.get_slice("=", 1))
 	world_fade_db = 0.0
+	duck_db = 0.0
 
 
 static func save() -> void:
@@ -73,9 +75,9 @@ static func apply() -> void:
 
 static func apply_audio() -> void:
 	_bus("Master", get_value("master"), 0.0)
-	_bus("Music", get_value("music"), world_fade_db)
+	_bus("Music", get_value("music"), world_fade_db + duck_db)
 	for bus in ["Ambience", "Interior", "Steps"]:
-		_bus(bus, get_value("world"), world_fade_db if bus == "Ambience" else 0.0)
+		_bus(bus, get_value("world"), (world_fade_db if bus == "Ambience" else 0.0) + duck_db)
 
 
 static func _bus(bus_name: String, volume: float, extra_db: float) -> void:

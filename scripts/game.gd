@@ -13,6 +13,7 @@ static var sun: DirectionalLight3D
 static var world: Node3D
 static var env: Environment
 static var bodycam_mat: ShaderMaterial
+static var journey: Node
 
 
 ## Новый мир — справочник заново (прежние части, если были, уже удалены вместе со старым миром).
@@ -26,3 +27,4 @@ static func clear() -> void:
 	world = null
 	env = null
 	bodycam_mat = null
+	journey = null

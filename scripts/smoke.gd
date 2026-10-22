@@ -10,6 +10,8 @@ extends Node3D
 ## 5. Держать T — затяжка: сигарета плавно подносится ближе, кончик разгорается, бумага тлеет,
 ##    от кончика вьётся тонкая струйка дыма. Отпустить — сигарета плавно возвращается, выдох дымом.
 ## 6. Догорела до фильтра — окурок улетает вниз. Следующий T — новая сигарета (пока есть в пачке).
+## 7. Q — выбросить окурок: он летит вперёд, кувыркаясь, тлеет и дымит; у края моста можно смотреть, как он
+##    падает в бездну (как сам герой когда-то). У перил моста с сигаретой в руке — подсказка «Выбросить окурок - Q».
 ## Руки в перчатках (fp_hands.gd, пока выключены): правая держит сигарету, левая — пачку, потом зажигалку.
 ## Припадок (seizure.gd) гасит сигарету — T, чтобы прикурить снова, — и после него руки
 ## дрожат, дрожь медленно стихает; пока дрожат, зажигалка загорается хуже.
@@ -27,6 +29,8 @@ const CIG_R := 0.0039
 const BURN_IDLE := 0.0006          # м/с — тлеет сама по себе
 const BURN_PUFF := 0.006           # м/с — во время затяжки
 const PUFF_MAX := 3.0              # дольше этого затяжка не «копится» для выдоха
+const THROW_HINT := "Выбросить окурок - Q"
+const BUTT_LIFE := 30.0            # столько секунд брошенный окурок живёт (падает в бездну), с
 
 # Где что держится (в координатах камеры: -Z вперёд, +Y вверх, +X вправо).
 const REST_POS := Vector3(0.06, -0.095, -0.21)
@@ -39,7 +43,7 @@ const LIGHTER_POS := Vector3(-0.055, -0.115, -0.25)
 
 var player: CharacterBody3D
 var state := State.IDLE
-var left_in_pack := PACK_SIZE
+var left_in_pack := PACK_SIZE   # с прошлого круга и прошлого запуска — пачка не пополняется (Progress)
 var paper_len := PAPER_LEN
 var puffing := false
 var puff_amount := 0.0             # 0..1 — «приближение» сигареты к губам
@@ -69,6 +73,8 @@ var hands: RefCounted              # руки (fp_hands.gd) — пока вык�
 var right_holds := false           # правая рука держит сигарету
 var thumb_flick := 0.0             # 0..1 — большой палец чиркает колёсико
 var tremor := 0.0                  # 0..1 — дрожь рук после припадка
+var throw_hint_shown := false
+var butt: RigidBody3D              # последний брошенный окурок (для тестов)
 
 var snd: Dictionary = {}
 var crackle: AudioStreamPlayer
@@ -81,6 +87,7 @@ func setup(p_player: CharacterBody3D) -> void:
 func _ready() -> void:
 	rng.randomize()
 	add_to_group("smoke")
+	left_in_pack = Progress.cigarettes
 	_build_pack()
 	_build_cigarette()
 	_build_lighter()
@@ -96,6 +103,11 @@ func _ready() -> void:
 # --- Управление ----------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.physical_keycode == KEY_Q and event.pressed and not event.echo:
+		if (state == State.SMOKING or state == State.UNLIT) and not player.locked:
+			throw_butt()
+			get_viewport().set_input_as_handled()
+		return
 	if not (event is InputEventKey and event.physical_keycode == KEY_T and not event.echo):
 		return
 	if player.locked or player.flying:
@@ -142,6 +154,7 @@ func _process(delta: float) -> void:
 		glow = move_toward(glow, 1.0 if puffing else 0.35, delta * (2.5 if puffing else 1.2))
 		if paper_len <= PAPER_MIN:
 			_throw_away()
+	_update_throw_hint()
 	if cig.visible:
 		var flicker := 0.85 + 0.15 * sin(Time.get_ticks_msec() * 0.011) * sin(Time.get_ticks_msec() * 0.0037)
 		ember_mat.emission_energy_multiplier = lerpf(0.4, 6.0, glow) * flicker
@@ -204,6 +217,7 @@ func _take_cigarette() -> void:
 
 func _pull_from_pack() -> void:
 	left_in_pack -= 1
+	Progress.set_cigarettes(left_in_pack)
 	pack_slots[left_in_pack].visible = false
 	# Сигарета появляется на месте взятой — в координатах камеры — и поднимается из пачки.
 	var slot: Transform3D = pack.transform * pack_slots[left_in_pack].transform
@@ -327,6 +341,64 @@ func _throw_away() -> void:
 	tween.chain().tween_callback(func() -> void:
 		cig.visible = false
 		state = State.IDLE)
+
+
+## Q: окурок летит вперёд и вверх, кувыркаясь; дальше — сам, по законам физики. Тлеющий — светится и дымит.
+func throw_butt() -> void:
+	var lit := state == State.SMOKING
+	state = State.BUSY
+	puffing = false
+	crackle.stop()
+	right_holds = false
+	_play("rustle", -6.0)
+	butt = RigidBody3D.new()
+	butt.mass = 0.01
+	butt.continuous_cd = true
+	butt.linear_damp = 0.05
+	var shape := CollisionShape3D.new()
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = 0.006
+	capsule.height = 0.07
+	shape.shape = capsule
+	shape.rotation.x = PI / 2.0
+	butt.add_child(shape)
+	var copy: Node3D = cig.duplicate()
+	copy.position = Vector3.ZERO
+	copy.rotation = Vector3.ZERO
+	copy.scale = Vector3.ONE * 1.6     # чуть крупнее, чтобы в полёте его было видно
+	butt.add_child(copy)
+	for trail in copy.find_children("*", "GPUParticles3D", true, false):
+		trail.emitting = lit   # тлеющий — тянет за собой струйку дыма
+	for light in copy.find_children("*", "OmniLight3D", true, false):
+		light.visible = lit
+		light.light_energy = 0.6
+		light.omni_range = 1.2
+	player.get_parent().add_child(butt)   # в мир: окурок больше не «в руках»
+	butt.global_transform = cig.global_transform
+	var cam := get_viewport().get_camera_3d()
+	var forward := -cam.global_transform.basis.z
+	butt.linear_velocity = forward * 6.0 + Vector3.UP * 2.5 + Vector3(player.velocity.x, 0, player.velocity.z)
+	butt.angular_velocity = Vector3(rng.randf_range(-14, 14), rng.randf_range(-6, 6), rng.randf_range(-14, 14))
+	var thrown := butt
+	get_tree().create_timer(BUTT_LIFE).timeout.connect(func() -> void:
+		if is_instance_valid(thrown):
+			thrown.queue_free())
+	cig.visible = false
+	stream.emitting = false
+	glow = 0.0
+	state = State.IDLE
+
+
+## У перил моста с сигаретой в руке — подсказка «Выбросить окурок - Q» (один раз за игру).
+func _update_throw_hint() -> void:
+	if throw_hint_shown or Game.hud == null:
+		return
+	var p := player.global_position
+	var at_edge := absf(p.x) > 9.0 and p.z < -368.0 and p.z > -2350.0 and p.y < 2.0
+	if at_edge and (state == State.SMOKING or state == State.UNLIT):
+		throw_hint_shown = true
+		Game.hud.action_hint(THROW_HINT, true)
+		get_tree().create_timer(5.0).timeout.connect(func() -> void: Game.hud.action_hint(THROW_HINT, false))
 
 
 ## Припадок: сигарета гаснет (остаётся в руке), руки начинают дрожать.

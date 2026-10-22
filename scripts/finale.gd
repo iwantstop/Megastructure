@@ -4,7 +4,8 @@ extends CanvasLayer
 ## «Это...Всё...Я», перед ним, со стороны солнца, в последний раз появляется ангел — а на слове «Я»
 ## за её спиной взрывается солнце: ослепительное ядро, ударная волна по небу, вспышка, гул.
 ## Потом он ложится, закрывает глаза; мир медленно растворяется в тёплом свете, потом в темноте.
-## В темноте — заключительные слайды (EPILOGUE), как пролог: по центру, каждый ждёт пробела.
+## В темноте — заключительные слайды (EPILOGUE), как пролог: по центру, каждый ждёт пробела. Под текстом —
+## снимки, которые игрок сделал за этот круг (photos.gd): разбросаны как попало, на каждом слайде добавляются ещё.
 ## Последний растаял — и он снова стоит на крыше той самой башни, с которой прыгнул. Круг замкнулся.
 
 const SILENCE := 10.0  # сколько он смотрит на солнце, стоя на коленях
@@ -28,6 +29,9 @@ var started := false
 var veil: ColorRect
 var slide_text: Label
 var slide_hint: Label
+var board: Control             # снимки игрока на заключительных слайдах
+var photo_spots: Array[Vector2] = []
+var rng := RandomNumberGenerator.new()
 var slide := -1
 var slide_ready := false       # слайд проявился — пробел листает дальше
 
@@ -86,6 +90,11 @@ func start() -> void:
 
 ## Заключительные слайды на чёрном: проявляются по одному, пробел — следующий; после последнего текст тает.
 func _epilogue() -> void:
+	rng.randomize()
+	board = Control.new()
+	board.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	board.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(board)   # под текстом
 	slide_text = ScreenText.center(self, "", 24, Color(0.88, 0.87, 0.85, 0.82))
 	slide_text.modulate.a = 0.0
 	slide_hint = ScreenText.corner_hint(self, "пробел — дальше")
@@ -101,14 +110,78 @@ func _next_slide() -> void:
 		tween.tween_property(slide_text, "modulate:a", 0.0, SLIDE_FADE * 0.6).set_trans(Tween.TRANS_SINE)
 		tween.parallel().tween_property(slide_hint, "modulate:a", 0.0, 0.4)
 	if slide >= EPILOGUE.size():
+		tween.parallel().tween_property(board, "modulate:a", 0.0, SLIDE_FADE).set_trans(Tween.TRANS_SINE)
+		tween.tween_callback(func() -> void:
+			board.queue_free()
+			Photos.taken.clear())   # новый круг — новые снимки
 		tween.tween_interval(1.5)
 		tween.tween_callback(_back_on_roof)   # последний слайд растаял — снова на крыше
 		return
 	var text: String = EPILOGUE[slide]
 	tween.tween_callback(func() -> void: slide_text.text = text)
+	tween.tween_callback(_scatter_photos.bind(slide))
 	tween.tween_property(slide_text, "modulate:a", 1.0, SLIDE_FADE).set_trans(Tween.TRANS_SINE)
 	tween.tween_callback(func() -> void: slide_ready = true)
 	tween.tween_property(slide_hint, "modulate:a", 1.0, 0.8)
+
+
+## Снимки этого слайда (свою долю от всех снимков круга) — бросаются на стол вокруг текста, как попало.
+func _scatter_photos(index: int) -> void:
+	var all := Photos.taken
+	if all.is_empty():
+		return
+	var per_slide := ceili(all.size() / float(EPILOGUE.size()))
+	var screen := get_viewport().get_visible_rect().size
+	var delay := 0.0
+	for k in range(index * per_slide, mini((index + 1) * per_slide, all.size())):
+		var card := _photo_card(all[k], screen)
+		card.position = _free_spot(screen) - card.size / 2.0
+		card.modulate.a = 0.0
+		card.scale = Vector2.ONE * 1.12
+		board.add_child(card)
+		var drop := create_tween().set_parallel().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		drop.tween_property(card, "modulate:a", 0.9, 0.5).set_delay(delay)
+		drop.tween_property(card, "scale", Vector2.ONE, 0.5).set_delay(delay)
+		delay += 0.35
+
+
+## Снимок в белой рамке (снизу — пошире), повёрнут как попало.
+func _photo_card(image: Image, screen: Vector2) -> Control:
+	var width := screen.x * rng.randf_range(0.17, 0.24)
+	var picture := Vector2(width, width * image.get_height() / image.get_width())
+	var border := width * 0.04
+	var card := ColorRect.new()
+	card.color = Color(0.92, 0.9, 0.86)
+	card.size = picture + Vector2(border * 2.0, border * 4.0)
+	card.pivot_offset = card.size / 2.0
+	card.rotation = rng.randf_range(-0.32, 0.32)
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var photo := TextureRect.new()
+	photo.texture = ImageTexture.create_from_image(image)
+	photo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	photo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	photo.position = Vector2(border, border)
+	photo.size = picture
+	photo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(photo)
+	return card
+
+
+## Случайное место на экране — не на полосе текста посередине и не прямо поверх прежних снимков.
+func _free_spot(screen: Vector2) -> Vector2:
+	var best := Vector2.ZERO
+	for attempt in 40:
+		var p := Vector2(rng.randf_range(0.12, 0.88) * screen.x, rng.randf_range(0.14, 0.86) * screen.y)
+		if absf(p.x - screen.x / 2.0) < screen.x * 0.36 and absf(p.y - screen.y / 2.0) < screen.y * 0.15:
+			continue   # там текст
+		best = p
+		var crowded := false
+		for q in photo_spots:
+			crowded = crowded or p.distance_to(q) < screen.x * 0.16
+		if not crowded:
+			break
+	photo_spots.append(best)
+	return best
 
 
 ## Снова на крыше самой высокой башни, у того края, с которого он прыгнул, лицом к горе.

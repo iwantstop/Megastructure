@@ -24,6 +24,7 @@ const LOOK_BACK_TIME := 2.5  # за столько секунд герой об�
 const CITY_VIEW := Vector3(0, 120, -150)   # куда смотреть, оглядываясь: середина города, на уровне башен
 
 var warm_told := false
+var fog_boost := 0.0     # 0..1 — туман сгущается (сидит на скамейке на мосту, bench_spot.gd)
 var override := -1.0  # из админ-панели: 0..1 — задать путь вручную, -1 — по положению игрока
 var progress := 0.0
 var sun_pitch_start: float
@@ -111,9 +112,10 @@ func _apply(k: float) -> void:
 	sky.sun_angle_max = lerpf(30.0, 12.0, sunset)
 
 	env.ambient_light_energy = lerpf(0.9, 1.15, k)
-	env.volumetric_fog_density = lerpf(0.007, 0.002, k)
+	env.volumetric_fog_density = lerpf(0.007, 0.002, k) * (1.0 + fog_boost * 5.0)
+	env.fog_density = 0.0012 * (1.0 + fog_boost * 6.0)
 	env.adjustment_saturation = lerpf(0.82, 1.05, k)
-	fog.density = lerpf(0.08, 0.0, k)
+	fog.density = lerpf(0.08, 0.0, k) * (1.0 + fog_boost * 3.0) + fog_boost * 0.04
 	bodycam_mat.set_shader_parameter("saturation", lerpf(0.85, 1.0, k))
 	bodycam_mat.set_shader_parameter("grade_tint", _grade(k))
 	bodycam_mat.set_shader_parameter("grade_amount", lerpf(0.6, 0.3, smoothstep(AWAY_SHARE, 1.0, k)))  # над облаками — мягче: небо и солнце важнее

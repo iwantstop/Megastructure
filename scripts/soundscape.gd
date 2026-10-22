@@ -1,7 +1,8 @@
 extends Node
 
 ## Звук мира по зонам, шаги и музыка.
-## - Петли: дождь на улицах, дождь в переулках (капли по металлу), далёкие машины, ветер. Громкость каждой
+## - Петли: дождь на улицах, дождь в переулках (капли по металлу), далёкие машины, ветер. На мосту ветер
+##   постепенно перекрывает шум города — к середине моста город затихает совсем. Громкость каждой
 ##   плавно подстраивается под зону (город / высота / мост / гора / над облаками / пещера) и под погоду пути.
 ## - В пещере уличные звуки глохнут (фильтр на шине Ambience), внутри слышны телевизор, часы, гул (Interior).
 ## - Шаги — тихие, синтезированные: асфальт, камень, гравий, паркет; эхо сильнее на мосту и в пещере (шина Steps).
@@ -107,11 +108,14 @@ func _process(delta: float) -> void:
 	var dry: float = clampf(journey.progress / 0.45, 0.0, 1.0) if journey else 0.0
 	var rain := 1.0 - dry
 	var y := player.global_position.y
+	# Мост: чем дальше от города, тем глуше его шум (дождь по улицам, машины) и тем сильнее ветер —
+	# к середине моста ветер перекрывает город целиком: город «отпускает» героя.
+	var away := _bridge_away()
 	var target := {
-		"rain": {"city": 0.9, "bridge": 0.35, "cave": 0.0}.get(zone, 0.0) * rain,
+		"rain": {"city": 0.9, "bridge": lerpf(0.6, 0.15, away), "cave": 0.0}.get(zone, 0.0) * rain,
 		"alley": (0.7 * (1.0 - smoothstep(10.0, 45.0, y)) if zone == "city" else 0.0) * rain,
-		"traffic": {"city": 0.55 + 0.3 * smoothstep(20.0, 120.0, y), "bridge": 0.25 * (1.0 - smoothstep(-1500.0, -700.0, -player.global_position.z))}.get(zone, 0.0),
-		"wind": {"city": 0.15 + 0.5 * smoothstep(30.0, 150.0, y), "bridge": 0.6, "mountain": 0.8, "high": 0.45, "cave": 0.12}.get(zone, 0.5),
+		"traffic": {"city": 0.55 + 0.3 * smoothstep(20.0, 120.0, y), "bridge": 0.55 * (1.0 - away)}.get(zone, 0.0),
+		"wind": {"city": 0.15 + 0.5 * smoothstep(30.0, 150.0, y), "bridge": lerpf(0.3, 1.0, away), "mountain": 0.8, "high": 0.45, "cave": 0.12}.get(zone, 0.5),
 	}
 	for loop_name in loops:
 		var p: AudioStreamPlayer = loops[loop_name]
@@ -124,6 +128,12 @@ func _process(delta: float) -> void:
 	music_level = move_toward(music_level, 0.0 if zone == "cave" else 1.0, delta * 0.3)
 	_footsteps(zone)
 	_music(delta, zone)
+
+
+## Насколько герой ушёл по мосту от города: 0 — у края города, 1 — середина моста и дальше.
+func _bridge_away() -> float:
+	var from := Structures.PLATFORM.position.y
+	return clampf((from - player.global_position.z) / ((from - Structures.CAUSEWAY_END) * 0.55), 0.0, 1.0)
 
 
 func _zone() -> String:

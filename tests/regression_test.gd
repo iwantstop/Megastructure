@@ -296,6 +296,9 @@ func _city() -> void:
 	var noticed := await _until(func() -> bool: return presence.noticed, 6.0)
 	await _wait(2.5)
 	_check("заметил её — субтитр-просьба", noticed and hud.subtitle.text in LINES, "\"%s\"" % hud.subtitle.text)
+	_tap(KEY_C)   # снимок — он будет на финальных слайдах
+	await _wait(0.6)
+	_check("C — снимок бодикамерой", Photos.taken.size() == 1)
 
 
 func _bridge() -> void:
@@ -333,6 +336,7 @@ func _bridge() -> void:
 			_check("рассказ о тепле: стоит, управления нет, смотрит на город", told and player.locked and Vector2(player.velocity.x, player.velocity.z).length() < 0.2 and _yaw_error_to(Vector3(0, 0, -150)) < 25.0)
 			var back := await _until(func() -> bool: return not player.locked, 40.0)
 			_check("текст растаял — снова к горе, управление есть", back and _yaw_error_to(Mountain.CENTER) < 25.0)
+	_tap(KEY_C)
 	var arrived := await _until(func() -> bool: return player.global_position.z < Structures_end() + 20.0, 40.0)
 	_key(KEY_W, false)
 	_key(KEY_SHIFT, false)
@@ -403,11 +407,15 @@ func _farewell() -> void:
 	_check("рассказ о солнце — от первого лица", sun and hud.narration.text.begins_with("Поднявшись выше облаков, я"))
 	_check("на подъёме падают бинты", bandages.dropped >= 1, "%d полосок" % bandages.dropped)
 	_check("после прощания ангел больше не приходит", presence.farewell_done)
+	_tap(KEY_C)
+	await _wait(0.6)
 	await _until(func() -> bool: return hud.narration.modulate.a < 0.01, 30.0)
 
 
 func _finale() -> void:
 	_section("Финал")
+	var pack_before: int = smoke.left_in_pack
+	var photos: int = Photos.taken.size()
 	_place(Mountain.CENTER + Vector3(0, Mountain.PEAK + 0.5, 0))
 	var started := await _until(func() -> bool: return finale.started, 3.0)
 	_check("на вершине — финал", started)
@@ -439,12 +447,17 @@ func _finale() -> void:
 		var ready := await _until(func() -> bool: return finale.slide == i and finale.slide_ready, 20.0)
 		await _wait(2.5)
 		_check("слайд %d стоит до пробела" % (i + 1), ready and finale.slide == i and finale.slide_text.text == finale.EPILOGUE[i], "\"%s\"" % finale.EPILOGUE[i])
+		if i == finale.EPILOGUE.size() - 1:
+			_check("на слайдах — снимки игрока, вразброс", photos >= 3 and finale.board.get_child_count() == photos, "%d снимков" % finale.board.get_child_count())
+			root.get_viewport().get_texture().get_image().save_png("res://screenshots/regression_epilogue_photos.png")
 		_tap(KEY_SPACE)
 	var roof := preload("res://scripts/structures.gd").ROOF_SPOT
 	var back := await _until(func() -> bool: return not player.locked and finale.veil.color.a < 0.05, 15.0)
 	_check("снова на крыше той башни, управление есть", back and player.global_position.distance_to(roof) < 2.0 and player.is_on_floor(),
 		"%s" % player.global_position.snapped(Vector3.ONE * 0.1))
 	_check("звук мира вернулся", AudioServer.get_bus_volume_db(AudioServer.get_bus_index("Ambience")) > -1.0)
+	_check("новый круг: пачка не пополнилась, снимки — заново", smoke.left_in_pack == pack_before and Photos.taken.is_empty(),
+		"в пачке %d" % smoke.left_in_pack)
 
 
 func _admin() -> void:
