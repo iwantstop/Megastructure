@@ -59,9 +59,13 @@ const PLATFORM := Rect2(-268, -368, 536, 518)  # x, z, ширина, глуби�
 const CAUSEWAY_END := -2350.0                   # мост над бездной тянется до подножия горы
 const BENCH_SPOT := Vector3(-12.4, 0, -1240)     # скамейка у левого края моста (bench_spot.gd)…
 const BENCH_GAP := Vector2(-1242.0, -1237.5)     # …и напротив неё в перилах разрыв — открытый обрыв (z от и до)
+const BENCH_TOWER_NEAR := 160.0                   # мегабашня ближе этого к скамейке — та, что видна с неё (bench_show.gd)…
+const BENCH_TOWER_ROOF := 58.0                   # …обрезана: крыша сразу над табло, на ней шпиль-меч
 const ABYSS := -900.0                            # докуда уходят основания построек (дальше — туман)
 
 var walk_spots: Array[Vector3] = []   # где можно стоять: для вещей и прочего
+var bench_tower: Dictionary = {}     # гигант напротив скамейки (обрезан по крыше BENCH_TOWER_ROOF)
+var giants: Array[Dictionary] = []   # гиганты за городом: вид, место, размеры (для билборда у скамейки и проб)
 var wells: Dictionary = {}            # Vector2i квартала -> true: провалы в бездну
 
 
@@ -88,9 +92,21 @@ func build() -> void:
 			continue
 		var roll := rng.randf()
 		if roll < 0.55:
-			_slab_tower(p.x, p.y, rng.randf_range(30, 110), rng.randf_range(30, 110), rng.randf_range(250, 1200))
+			var w := rng.randf_range(30, 110)
+			var d := rng.randf_range(30, 110)
+			var h := rng.randf_range(250, 1200)
+			giants.append({"kind": "slab", "pos": Vector2(p.x, p.y), "size": Vector2(w, d), "h": h})
+			# Башня напротив скамейки на мосту: крыша сразу над табло с бегущей строкой (шпиль-меч ставит bench_show).
+			var cap := INF
+			if not bench_tower and Vector2(p.x, p.y).distance_to(Vector2(BENCH_SPOT.x, BENCH_SPOT.z)) < BENCH_TOWER_NEAR:
+				cap = BENCH_TOWER_ROOF
+				bench_tower = giants.back()
+			_slab_tower(p.x, p.y, w, d, h, cap)
 		elif roll < 0.72:
-			_round_tower(p.x, p.y, rng.randf_range(15, 50), rng.randf_range(250, 1000))
+			var r := rng.randf_range(15, 50)
+			var h := rng.randf_range(250, 1000)
+			giants.append({"kind": "round", "pos": Vector2(p.x, p.y), "r": r, "h": h})
+			_round_tower(p.x, p.y, r, h)
 		elif roll < 0.86:
 			_lattice(p.x, p.y, rng.randf_range(50, 130), rng.randf_range(150, 600))
 		else:
@@ -1218,8 +1234,10 @@ func _wall(x: float, z: float, yaw: float, length: float, h: float) -> void:
 		pos = end + rng.randf_range(14, 30)  # проход
 
 
-func _slab_tower(x: float, z: float, w: float, d: float, h: float) -> void:
+## cap — обрезать башню на этой высоте (крыша), не меняя остального мира: случайные числа берутся те же.
+func _slab_tower(x: float, z: float, w: float, d: float, h: float, cap := INF) -> void:
 	var t := _yaw_at(x, z)
+	giants.back().xform = t
 	var roll := rng.randf()
 	# Чаще всего — аркология с тысячами окон, иногда — глухой бетонный гигант.
 	var mat: Material = _pick(m.arcology) if roll < 0.6 else (m.weathered if roll < 0.8 else m.tower_panels)
@@ -1231,32 +1249,40 @@ func _slab_tower(x: float, z: float, w: float, d: float, h: float) -> void:
 	var y := 0.0
 	for tier in tiers:
 		var th := h if tiers == 1 else (h * 0.6 if tier == 0 else h * 0.4 / (tiers - 1))
-		b.box_local(t, Vector3(0, y + th / 2.0, 0), Vector3(w, th, d), mat, false)
-		b.occluder_local(t, Vector3(0, y + th / 2.0, 0), Vector3(w, th, d))
+		var top := minf(y + th, cap)
+		if top > y:
+			b.box_local(t, Vector3(0, (y + top) / 2.0, 0), Vector3(w, top - y, d), mat, false)
+			b.occluder_local(t, Vector3(0, (y + top) / 2.0, 0), Vector3(w, top - y, d))
+		if tier == 0:
+			giants.back().base_h = top - y   # нижний ярус — во всю ширину
 		# Карнизы.
 		var ledge_y := y + rng.randf_range(25, 45)
 		while ledge_y < y + th - 5.0:
-			b.box_local(t, Vector3(0, ledge_y, 0), Vector3(w + 3, 1.5, d + 3), m.concrete_dark, false)
+			if ledge_y < cap - 2.0:
+				b.box_local(t, Vector3(0, ledge_y, 0), Vector3(w + 3, 1.5, d + 3), m.concrete_dark, false)
 			ledge_y += rng.randf_range(30, 60)
-		if near and roll >= 0.6 and rng.randf() < 0.6:
-			_slits(t, y, th, w, d, 0.0)  # у аркологий окна рисует шейдер, щели только у бетонных
+		if near and roll >= 0.6 and rng.randf() < 0.6 and top > y:
+			_slits(t, y, top - y, w, d, 0.0)  # у аркологий окна рисует шейдер, щели только у бетонных
 		# Рёбра по бокам.
 		if tier == 0 and rng.randf() < 0.5:
 			var fins := maxi(int(d / 12.0), 2)
 			for f in fins:
 				var fz := -d / 2.0 + (f + 0.5) * d / fins
 				for side in [-1.0, 1.0]:
-					b.box_local(t, Vector3(side * (w / 2.0 + 1.0), th / 2.0, fz), Vector3(2, th, 2.5), mat, false)
+					b.box_local(t, Vector3(side * (w / 2.0 + 1.0), (top - y) / 2.0, fz), Vector3(2, top - y, 2.5), mat, false)
 		y += th
 		w *= rng.randf_range(0.55, 0.85)
 		d *= rng.randf_range(0.55, 0.85)
 	if rng.randf() < 0.5:
 		var ah := rng.randf_range(40, 150)
-		b.box_local(t, Vector3(0, y + ah / 2.0, 0), Vector3(1.5, ah, 1.5), m.metal, false)
-	# Гигантская реклама на ближних мегабашнях — светится сквозь туман.
+		if cap == INF:
+			b.box_local(t, Vector3(0, y + ah / 2.0, 0), Vector3(1.5, ah, 1.5), m.metal, false)
+	# Гигантская реклама на ближних мегабашнях — светится сквозь туман (на обрезанной — помельче, под крышей).
 	if near and rng.randf() < 0.4:
-		var aw := footprint * 0.6
-		_add_ad(t, Vector3(0, minf(h * 0.3, 140.0), d_base / 2.0 + 0.5), Vector2(aw, aw * 1.5))
+		var aw := footprint * 0.6 if cap == INF else cap * 0.35
+		_add_ad(t, Vector3(0, minf(minf(h * 0.3, 140.0), cap * 0.5), d_base / 2.0 + 0.5), Vector2(aw, aw * 1.5))
+	y = minf(y, cap)
+	giants.back().roof = y
 	towers.append({"pos": Vector3(x, 0, z), "height": y, "radius": footprint * 0.6})
 
 

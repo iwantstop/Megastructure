@@ -1,11 +1,14 @@
 extends Control
 
-## Экран настроек (из главного меню и из паузы): звук, управление, камера, изображение.
+## Экран настроек (из главного меню и из паузы): звук, управление, камера, изображение
+## (и под ним — раскрывающиеся «Расширенные настройки графики»).
 ## Всё меняется сразу и сохраняется (settings.gd). Esc или «Назад» — вернуться.
 
 signal back
 
 var rows: VBoxContainer
+var target: VBoxContainer     # куда добавляются строки: rows или блок расширенных настроек
+var advanced: VBoxContainer
 var first: Control
 
 
@@ -33,6 +36,7 @@ func _ready() -> void:
 	rows = VBoxContainer.new()
 	rows.add_theme_constant_override("separation", 8)
 	center.add_child(rows)
+	target = rows
 
 	_header("Звук")
 	_slider("Общая громкость", "master", 0.0, 1.0)
@@ -48,7 +52,9 @@ func _ready() -> void:
 	_header("Изображение")
 	_choice("Качество графики", "quality", Settings.QUALITY)
 	_toggle("Живописный стиль", "paint")
-	_slider("Разрешение 3D", "render_scale", 0.5, 1.0)
+	_choice("Сглаживание MSAA", "msaa", Settings.MSAA)
+	_toggle("Сглаживание TAA", "taa")
+	_choice("Анизотропная фильтрация", "aniso", Settings.ANISO)
 	_slider("Яркость", "brightness", 0.7, 1.3)
 	_toggle("Полный экран", "fullscreen")
 	_toggle("Вертикальная синхронизация", "vsync")
@@ -56,6 +62,31 @@ func _ready() -> void:
 	for fps in Settings.FPS_LIMITS:
 		limits.append("нет" if fps == 0 else str(fps))
 	_choice("Ограничение FPS", "fps_limit", limits, Settings.FPS_LIMITS)
+
+	# Расширенные настройки графики — свёрнуты; «Качество графики» выставляет их все разом.
+	var gap := Control.new()
+	gap.custom_minimum_size.y = 10
+	rows.add_child(gap)
+	var expand := MenuUi.button(rows, "Расширенные настройки графики  +", func() -> void: pass, 18)
+	expand.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	advanced = VBoxContainer.new()
+	advanced.add_theme_constant_override("separation", 8)
+	advanced.visible = false
+	rows.add_child(advanced)
+	expand.pressed.connect(func() -> void:
+		advanced.visible = not advanced.visible
+		expand.text = "Расширенные настройки графики  %s" % ("−" if advanced.visible else "+"))
+	target = advanced
+	_slider("Разрешение 3D", "render_scale", 0.5, 1.0)
+	_toggle("Глобальное освещение (SDFGI)", "gi")
+	_toggle("Непрямой свет (SSIL)", "ssil")
+	_toggle("Отражения (SSR)", "ssr")
+	_toggle("Затенение углов (SSAO)", "ssao")
+	_toggle("Объёмный туман: высокое качество", "fog_hq")
+	_choice("Качество теней", "shadows", Settings.SHADOWS)
+	_toggle("Свечение (bloom)", "glow")
+	_toggle("Сглаживание FXAA", "fxaa")
+	target = rows
 
 	var bottom := HBoxContainer.new()
 	bottom.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
@@ -82,9 +113,15 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _reset() -> void:
 	Settings.reset()
-	for row in rows.get_children():
-		if row.has_meta("refresh"):
-			row.get_meta("refresh").call()
+	_refresh_all()
+
+
+## Все строки заново читают значения (после сброса и после смены пресета качества).
+func _refresh_all() -> void:
+	for box in [rows, advanced]:
+		for row in box.get_children():
+			if row.has_meta("refresh"):
+				row.get_meta("refresh").call()
 
 
 func _header(text: String) -> void:
@@ -92,11 +129,11 @@ func _header(text: String) -> void:
 	label.text = text
 	label.add_theme_color_override("font_color", MenuUi.DIM)
 	label.add_theme_font_size_override("font_size", 16)
-	if rows.get_child_count() > 0:
+	if target.get_child_count() > 0:
 		var gap := Control.new()
 		gap.custom_minimum_size.y = 10
-		rows.add_child(gap)
-	rows.add_child(label)
+		target.add_child(gap)
+	target.add_child(label)
 
 
 func _row(text: String) -> HBoxContainer:
@@ -106,7 +143,7 @@ func _row(text: String) -> HBoxContainer:
 	label.text = text
 	label.custom_minimum_size.x = 380
 	row.add_child(label)
-	rows.add_child(row)
+	target.add_child(row)
 	return row
 
 
@@ -158,7 +195,7 @@ func _choice(text: String, key: String, names: Array, values: Array = []) -> voi
 	var shift := func(step: int) -> void:
 		var i := vals.find(Settings.get_value(key))
 		Settings.set_value(key, vals[posmod(i + step, vals.size())])
-		refresh.call()
+		_refresh_all()   # пресет качества меняет и расширенные настройки
 	refresh.call()
 	b.pressed.connect(func() -> void: shift.call(1))
 	b.gui_input.connect(func(event: InputEvent) -> void:

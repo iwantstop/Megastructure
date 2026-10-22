@@ -34,8 +34,8 @@ func _ready() -> void:
 	for side in [-0.75, 0.75]:
 		Shapes.box(self, Vector3(0.05, 0.45, 0.5), Vector3(side, 0.225, 0.02), iron)
 		Shapes.box(self, Vector3(0.05, 0.45, 0.05), Vector3(side, 0.7, 0.25), iron)
-	# Торшер сбоку: тонкая стойка, тёплый абажур, свет.
-	var lamp := Vector3(-1.25, 0, 0.1)
+	# Торшер сбоку, справа (слева — вид на башню с бегущей строкой): тонкая стойка, тёплый абажур, свет.
+	var lamp := Vector3(1.25, 0, 0.1)
 	Shapes.cylinder(self, 0.16, 0.16, 0.03, lamp + Vector3(0, 0.015, 0), iron)
 	Shapes.cylinder(self, 0.015, 0.015, 1.55, lamp + Vector3(0, 0.79, 0), iron)
 	var shade := Shapes.glow(Color(0.9, 0.75, 0.5), Color(1.0, 0.72, 0.42), 3.0)

@@ -22,6 +22,13 @@ const PACK_SIZE := 10
 const STRIKE_CHANCE := 0.5
 const SHOW_HANDS := false         # руки выключены: ждём модель рук с костями (код рук готов — fp_hands.gd)
 const TREMOR_TIME := 120.0        # за столько секунд дрожь после припадка стихает
+# Инерция рук: дёрнул мышь — всё в руках чуть отстаёт от взгляда и наклоняется, потом мягко догоняет.
+const SWAY_PER_PIXEL := 0.012      # сколько «рывка» даёт пиксель движения мыши
+const SWAY_LIMIT := 1.0            # сильнее не отстаёт, как ни дёргай
+const SWAY_SHIFT := 0.012          # сдвиг при полном рывке, м
+const SWAY_TILT := 0.07            # наклон при полном рывке, рад
+const SWAY_FOLLOW := 14.0          # как быстро руки откликаются на рывок
+const SWAY_RETURN := 6.0           # как быстро возвращаются на место
 const FILTER_LEN := 0.025
 const PAPER_LEN := 0.058
 const PAPER_MIN := 0.006           # догорело — дальше только фильтр
@@ -73,6 +80,8 @@ var hands: RefCounted              # руки (fp_hands.gd) — пока вык�
 var right_holds := false           # правая рука держит сигарету
 var thumb_flick := 0.0             # 0..1 — большой палец чиркает колёсико
 var tremor := 0.0                  # 0..1 — дрожь рук после припадка
+var sway_kick := Vector2.ZERO      # рывок мыши (затухает)
+var sway := Vector2.ZERO           # текущее отставание рук
 var throw_hint_shown := false
 var butt: RigidBody3D              # последний брошенный окурок (для тестов)
 
@@ -101,6 +110,11 @@ func _ready() -> void:
 
 
 # --- Управление ----------------------------------------------------------------
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		sway_kick = (sway_kick + event.relative * SWAY_PER_PIXEL * player.mouse_scale).limit_length(SWAY_LIMIT)
+
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.physical_keycode == KEY_Q and event.pressed and not event.echo:
@@ -131,8 +145,13 @@ func _process(delta: float) -> void:
 	tremor = move_toward(tremor, 0.0, delta / TREMOR_TIME)
 	var ms := Time.get_ticks_msec() * 0.001
 	var shake := tremor * tremor
-	position = Vector3(sin(ms * 31.0) * sin(ms * 7.3), sin(ms * 27.0 + 1.0) * sin(ms * 5.1), 0.0) * 0.006 * shake
-	rotation.z = sin(ms * 23.0) * sin(ms * 3.7) * 0.03 * shake
+	# Инерция рук (в обычном времени — и на скамейке, где время ускорено).
+	var real := delta / maxf(Engine.time_scale, 0.001)
+	sway = sway.lerp(sway_kick, 1.0 - exp(-real * SWAY_FOLLOW))
+	sway_kick = sway_kick.lerp(Vector2.ZERO, 1.0 - exp(-real * SWAY_RETURN))
+	position = Vector3(sin(ms * 31.0) * sin(ms * 7.3), sin(ms * 27.0 + 1.0) * sin(ms * 5.1), 0.0) * 0.006 * shake 		+ Vector3(-sway.x, sway.y, 0.0) * SWAY_SHIFT   # взгляд ушёл вправо — руки чуть отстали влево
+	rotation = Vector3(-sway.y * SWAY_TILT * 0.5, sway.x * SWAY_TILT * 0.6,
+		sin(ms * 23.0) * sin(ms * 3.7) * 0.03 * shake + sway.x * SWAY_TILT)
 	if state == State.SMOKING:
 		var holding: bool = Input.is_physical_key_pressed(KEY_T) and _hands_free()
 		if holding and not puffing:
