@@ -56,10 +56,10 @@ func _ready() -> void:
 	fly_box = _check(box, "Полёт (F)  — Space вверх, Ctrl вниз", func(on: bool) -> void: player.set_flying(on))
 	_check(box, "Сквозь стены", func(on: bool) -> void: player.set_noclip(on))
 	_check(box, "Эффект бодикамеры", func(on: bool) -> void: bodycam.visible = on).button_pressed = true
-	_slider(box, "Бодикамера (линза, зерно, виньетка): 0 — нет, 100 — как задумано", 0, 200, 100, _on_bodycam_strength)
-	_slider(box, "Покачивание при ходьбе: 0 — нет, 100 — как задумано", 0, 200, 100, func(v: float) -> void: player.bob_scale = v / 100.0)
-	_slider(box, "Крен при повороте камеры: 0 — нет, 100 — как задумано", 0, 300, 100, func(v: float) -> void: player.turn_roll_scale = v / 100.0)
-	_check(box, "Живопись (мазки и гамма зоны)", _on_paint).button_pressed = true
+	_slider(box, "Бодикамера (линза, зерно, виньетка): 0 — нет, 100 — как задумано", 0, 200, Settings.get_value("bodycam") * 100.0, _on_bodycam_strength)
+	_slider(box, "Покачивание при ходьбе: 0 — нет, 100 — как задумано", 0, 200, Settings.get_value("bob") * 100.0, func(v: float) -> void: player.bob_scale = v / 100.0)
+	_slider(box, "Крен при повороте камеры: 0 — нет, 300 — максимум", 0, 300, Settings.get_value("roll") * 100.0, func(v: float) -> void: player.turn_roll_scale = v / 100.0)
+	_check(box, "Живопись (мазки и гамма зоны)", _on_paint).button_pressed = Settings.get_value("paint")
 	_check(box, "Глобальное освещение (тяжёлое)", func(on: bool) -> void: env.sdfgi_enabled = on).button_pressed = true
 	_slider(box, "Скорость полёта", 5, 200, player.fly_speed, func(v: float) -> void: player.fly_speed = v)
 	_check(box, "Путь героя вручную", _on_manual_journey)
@@ -82,9 +82,8 @@ func _on_bodycam_strength(v: float) -> void:
 
 
 func _on_paint(on: bool) -> void:
-	(bodycam.get_child(0) as ColorRect).material.set_shader_parameter("paint", 0.7 if on else 0.0)
-	for node in get_tree().get_nodes_in_group("paint_strokes"):
-		node.visible = on
+	Settings.values["paint"] = on   # только на этот запуск; насовсем — в настройках (Esc)
+	Settings.apply()
 
 
 ## Ставит героя на тропу лицом вперёд по ней.

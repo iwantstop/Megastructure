@@ -12,11 +12,12 @@ const FPS_LIMITS := [0, 30, 60, 120, 144]    # 0 — без ограничени
 const BASE_EXPOSURE := 0.95                  # яркость «как задумано» (картинку без просьбы не осветляем)
 const BODYCAM_PARAMS := ["distortion", "aberration", "vignette", "grain"]
 
-## Значения по умолчанию — ровно то, как игра выглядела и звучала до появления настроек.
+## Значения по умолчанию (с 22.10.2026: живопись выключена, крен при повороте — на максимум).
+const VERSION := 2   # старые сохранения (без версии) один раз получают новый крен по умолчанию
 const DEFAULTS := {
 	"master": 1.0, "music": 1.0, "world": 1.0,
 	"mouse": 1.0, "invert_y": false,
-	"bodycam": 1.0, "bob": 1.0, "roll": 1.0,
+	"bodycam": 1.0, "bob": 1.0, "roll": 3.0, "paint": false,
 	"fullscreen": false, "vsync": true, "fps_limit": 0, "brightness": 1.0, "render_scale": 1.0,
 	"quality": 2,
 }
@@ -44,6 +45,8 @@ static func load_saved() -> void:
 	if cfg.load(FILE) == OK:
 		for key in DEFAULTS:
 			values[key] = cfg.get_value("settings", key, DEFAULTS[key])
+		if cfg.get_value("meta", "version", 1) < VERSION:
+			values["roll"] = DEFAULTS["roll"]
 	# Для замеров: -- --quality=low|medium|high (бенчмарк), не сохраняется.
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--quality="):
@@ -56,6 +59,7 @@ static func save() -> void:
 	var cfg := ConfigFile.new()
 	for key in values:
 		cfg.set_value("settings", key, values[key])
+	cfg.set_value("meta", "version", VERSION)
 	cfg.save(FILE)
 
 
@@ -135,7 +139,9 @@ static func _apply_graphics() -> void:
 	RenderingServer.environment_set_volumetric_fog_volume_size(64 if quality >= 1 else 40, 64 if quality >= 1 else 32)
 	if Game.world:
 		for node in Game.world.get_tree().get_nodes_in_group("paint_strokes"):
-			node.visible = quality >= 1
+			node.visible = quality >= 1 and get_value("paint")
+	if Game.bodycam_mat:   # живопись: пятна краски (Кувахара) и гамма зоны на экране
+		Game.bodycam_mat.set_shader_parameter("paint", 0.7 if get_value("paint") else 0.0)
 		var viewport := Game.world.get_viewport()
 		var scale: float = get_value("render_scale") * (0.75 if quality == 0 else 1.0)
 		viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR if scale >= 0.999 else Viewport.SCALING_3D_MODE_FSR

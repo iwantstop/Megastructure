@@ -47,6 +47,7 @@ func _ready() -> void:
 	_slider("Крен при повороте", "roll", 0.0, 3.0)
 	_header("Изображение")
 	_choice("Качество графики", "quality", Settings.QUALITY)
+	_toggle("Живописный стиль", "paint")
 	_slider("Разрешение 3D", "render_scale", 0.5, 1.0)
 	_slider("Яркость", "brightness", 0.7, 1.3)
 	_toggle("Полный экран", "fullscreen")

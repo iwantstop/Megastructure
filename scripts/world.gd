@@ -196,6 +196,7 @@ func _build() -> void:
 		flashback.setup(player, bodycam.get_child(0).material)
 		add_child(flashback)
 
+	Settings.load_saved()   # громкость, мышь, камера, качество — как выбрал игрок (админ-панель берёт отсюда начальные значения)
 	var admin = preload("res://scripts/admin.gd").new()
 	admin.setup({"player": player, "dream": dream, "presence": presence, "env": env, "bodycam": bodycam,
 		"journey": journey, "intro": intro, "finale": finale, "seizure": seizure})
@@ -206,7 +207,6 @@ func _build() -> void:
 		add_child(Game.hud)
 		add_child(preload("res://scripts/photos.gd").new())   # C — снимок бодикамерой (в финале — на слайдах)  # задание и субтитры; в демо — тоже, для видеоотчёта
 
-	Settings.load_saved()   # громкость, мышь, камера, качество — как выбрал игрок
 	Settings.apply()
 	if not scripted:
 		add_child(preload("res://scripts/pause_menu.gd").new())   # Esc — пауза и настройки
