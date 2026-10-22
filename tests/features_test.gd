@@ -139,12 +139,14 @@ func _run() -> void:
 	await _wait(6.0)
 	var forward: Vector3 = -player.camera.global_transform.basis.z
 	var to_abyss := rad_to_deg(Vector2(forward.x, forward.z).angle_to(Vector2(-1, 0)))
-	_check("сел: время быстрее, туман гуще, смотрит в бездну", bench.sitting and player.locked and Engine.time_scale > 3.5 and Game.journey.fog_boost > 0.3 and absf(to_abyss) < 10.0,
+	_check("сел (человек с табло ещё не прыгал): время обычное, туман гуще, смотрит в бездну", bench.sitting and player.locked and is_equal_approx(Engine.time_scale, 1.0) and Game.journey.fog_boost > 0.3 and absf(to_abyss) < 10.0,
 		"время ×%.1f, туман %.2f, взгляд от бездны %.0f°" % [Engine.time_scale, Game.journey.fog_boost, to_abyss])
 	await _shot("bench_sitting")
 	_tap(KEY_E)
 	await _wait(2.5)
 	_check("E — встал, всё как было", not bench.sitting and not player.locked and is_equal_approx(Engine.time_scale, 1.0))
+	# Человек с табло уже прыгнул (как будто досидел до конца) — теперь, садясь снова, время бежит быстрее.
+	get_first_node_in_group("bench_show").fall_state = 3
 	# Сидя на скамейке — курить можно: с пустыми руками сел, T — сигарета из пачки; встал — время обычное.
 	smoke.put_away()
 	await _wait(1.5)
@@ -155,8 +157,10 @@ func _run() -> void:
 	_tap(KEY_T)
 	await _wait(4.0)
 	var took_seated: bool = smoke.state != smoke.State.IDLE
+	var fast_after_jump: float = Engine.time_scale
 	_tap(KEY_E)
 	await _wait(5.0)
+	_check("сел снова после прыжка — время быстрее", fast_after_jump > 3.5, "время ×%.1f" % fast_after_jump)
 	_check("сидя на скамейке курить можно; встал — время обычное", took_seated and not player.locked and is_equal_approx(Engine.time_scale, 1.0),
 		"сигарета: %s, время ×%.1f" % [smoke.State.keys()[smoke.state], Engine.time_scale])
 	# Сел и сразу встал (время ещё не успело разогнаться) — потом оно не должно разогнаться само.

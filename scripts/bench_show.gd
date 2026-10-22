@@ -69,6 +69,7 @@ func setup(best: Dictionary) -> void:
 
 
 func _ready() -> void:
+	add_to_group("bench_show")   # скамейка спрашивает, прыгнул ли уже человек
 	viewport = SubViewport.new()
 	viewport.size = PIXELS
 	viewport.disable_3d = true

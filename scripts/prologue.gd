@@ -1,9 +1,10 @@
 extends CanvasLayer
 
-## Экран загрузки с прологом. Чёрный экран, название «Где мой ангел?» — под ним строится мир; потом под
-## названием главное меню («Начать», «Настройки», «Выход»). «Начать» — абзацы предыстории по одному медленно проявляются и тают. Каждый остаётся на экране,
-## пока игрок не нажмёт пробел. Пробел — следующий абзац; после последнего — «…и бросился вниз.» —
-## пробел начинает игру. Пока идёт пролог, игра на паузе: падение не начинается.
+## Экран загрузки с прологом. Чёрный экран, «загрузка…» — строится мир. Потом абзацы предыстории по одному
+## медленно проявляются и тают; каждый остаётся на экране, пока игрок не нажмёт пробел. После последнего
+## («…и бросился вниз.») — главное меню («Начать», «Настройки», «Выход»). «Начать» — меню тает, и герой
+## стоит на крыше самой высокой башни (там же, куда возвращает финал, — петля); дальше вступление (intro.gd).
+## Пока идёт пролог и меню, игра на паузе.
 
 signal title_shown
 signal finished
@@ -19,7 +20,6 @@ const FADE := 1.4
 const TEXT_ALPHA := 0.82
 
 var background: ColorRect
-var title: Label
 var text: Label
 var hint: Label
 var index := -1
@@ -34,20 +34,18 @@ func _ready() -> void:
 	layer = 50
 	process_mode = Node.PROCESS_MODE_ALWAYS   # работает, пока мир на паузе
 	background = ScreenText.black(self)
-	title = ScreenText.center(background, TITLE, 34, Color(0.85, 0.85, 0.85, 0.7))
-	title.modulate.a = 0.0
 	text = ScreenText.center(background, "", 24, Color(0.88, 0.87, 0.85, TEXT_ALPHA))
 	text.modulate.a = 0.0
 	hint = ScreenText.corner_hint(background, "загрузка…")
 	var t := create_tween()
-	t.tween_property(title, "modulate:a", 1.0, 1.0).set_trans(Tween.TRANS_SINE)
+	t.tween_interval(0.3)   # дать кадру с «загрузкой» отрисоваться — дальше постройка займёт поток
 	t.tween_callback(func() -> void: title_shown.emit())
 
 
-## Мир построен — под названием проявляется главное меню.
+## Пролог дочитан — проявляется главное меню.
 func show_menu() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	menu = MenuUi.column(background, 110.0)
+	menu = MenuUi.column(background, 0.0)
 	MenuUi.button(menu, "Начать", _start)
 	MenuUi.button(menu, "Настройки", _open_settings)
 	MenuUi.button(menu, "Выход", func() -> void: get_tree().quit())
@@ -57,43 +55,37 @@ func show_menu() -> void:
 	settings.back.connect(_close_settings)
 	background.add_child(settings)
 	var fade := create_tween()
-	fade.tween_property(hint, "modulate:a", 0.0, 0.6)
-	fade.parallel().tween_property(menu, "modulate:a", 1.0, 1.0).set_trans(Tween.TRANS_SINE)
+	fade.tween_property(menu, "modulate:a", 1.0, 1.0).set_trans(Tween.TRANS_SINE)
 	menu.get_child(0).grab_focus()
 
 
-## «Начать»: меню тает — начинается пролог.
+## «Начать»: новая игра — меню тает, игра начинается (герой на крыше).
 func _start() -> void:
 	for b in menu.get_children():
 		b.disabled = true
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	Progress.new_game()   # новая игра — полная пачка
-	var fade := create_tween()
-	fade.tween_property(menu, "modulate:a", 0.0, 0.6)
-	fade.tween_callback(menu.queue_free)
-	hint.modulate.a = 1.0
-	play_text()
+	_finish()
 
 
 func _open_settings() -> void:
 	menu.hide()
-	title.hide()
 	settings.open()
 
 
 func _close_settings() -> void:
 	settings.hide()
 	menu.show()
-	title.show()
 	menu.get_child(1).grab_focus()
 
 
-## «Начать» — название тает, начинаются абзацы.
+## Мир построен — начинаются абзацы.
 func play_text() -> void:
 	playing = true
-	hint.text = "пробел — дальше"
 	tween = create_tween()
-	tween.tween_property(title, "modulate:a", 0.0, FADE).set_trans(Tween.TRANS_SINE)
+	tween.tween_property(hint, "modulate:a", 0.0, 0.4)
+	tween.tween_callback(func() -> void: hint.text = "пробел — дальше")
+	tween.tween_property(hint, "modulate:a", 1.0, 0.6)
 	tween.tween_callback(_next)
 
 
@@ -112,7 +104,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if index < PARAGRAPHS.size() - 1:
 			_next()
 		else:
-			_finish()
+			_to_menu()
 
 
 ## Следующий абзац: прежний тает, новый проявляется.
@@ -124,25 +116,29 @@ func _next() -> void:
 	if index >= 0:
 		tween.tween_property(text, "modulate:a", 0.0, FADE * 0.7).set_trans(Tween.TRANS_SINE)
 	index += 1
-	if index == PARAGRAPHS.size() - 1:
-		tween.parallel().tween_property(hint, "modulate:a", 0.0, FADE * 0.7)
-		tween.tween_callback(func() -> void: hint.text = "пробел — начать")
-		tween.tween_property(hint, "modulate:a", 1.0, FADE)
 	var paragraph: String = PARAGRAPHS[min(index, PARAGRAPHS.size() - 1)]
 	tween.tween_callback(func() -> void: text.text = paragraph)
 	tween.tween_property(text, "modulate:a", 1.0, FADE).set_trans(Tween.TRANS_SINE)
 	tween.tween_callback(func() -> void: shown_for = 0.0)
 
 
-## Конец пролога: текст и подсказка тают, игра снимается с паузы, чёрный экран уходит в падение.
-func _finish() -> void:
+## Последний абзац дочитан: текст и подсказка тают — главное меню.
+func _to_menu() -> void:
 	playing = false
 	if tween:
 		tween.kill()
 	tween = create_tween()
 	tween.tween_property(text, "modulate:a", 0.0, FADE * 0.7).set_trans(Tween.TRANS_SINE)
-	tween.parallel().tween_property(title, "modulate:a", 0.0, FADE * 0.7)
 	tween.parallel().tween_property(hint, "modulate:a", 0.0, 0.4)
+	tween.tween_callback(show_menu)
+
+
+## «Начать»: меню тает, игра снимается с паузы, чёрный экран уходит — герой на крыше.
+func _finish() -> void:
+	if tween:
+		tween.kill()
+	tween = create_tween()
+	tween.tween_property(menu, "modulate:a", 0.0, 0.6)
 	tween.tween_callback(func() -> void: finished.emit())
 	tween.tween_property(background, "modulate:a", 0.0, 1.6).set_trans(Tween.TRANS_SINE)
 	tween.tween_callback(queue_free)

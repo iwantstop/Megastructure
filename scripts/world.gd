@@ -29,6 +29,7 @@ var lifts: Array[Node3D] = []
 var _last_mark := 0
 var _build_time := 0
 var time := 0.0
+var from_roof := false   # новая игра: вступление начинается на крыше самой высокой башни (как после финала)
 var built := false
 var shared_noise: NoiseTexture2D
 var neon: Array[StandardMaterial3D] = []
@@ -64,11 +65,12 @@ func _ready() -> void:
 	if with_prologue:
 		var prologue = preload("res://scripts/prologue.gd").new()
 		add_child(prologue)
-		await prologue.title_shown        # название проявилось — теперь можно надолго занять поток постройкой
+		await prologue.title_shown        # «загрузка…» на экране — теперь можно надолго занять поток постройкой
+		from_roof = true
 		_build()
 		built = true
-		get_tree().paused = true           # падение не начинается, пока не дочитан пролог
-		prologue.show_menu()   # главное меню; «Начать» — пролог
+		get_tree().paused = true           # вступление не начинается, пока не дочитан пролог и не нажато «Начать»
+		prologue.play_text()   # абзацы предыстории, после них — главное меню; «Начать» — герой на крыше
 		await prologue.finished
 		get_tree().paused = false
 		return
@@ -184,6 +186,7 @@ func _build() -> void:
 	add_child(soundscape)
 	var intro = preload("res://scripts/intro.gd").new()
 	intro.setup(player)
+	intro.from_roof = from_roof   # в настоящей игре — с крыши башни; в тестах и демо — сразу падение
 	add_child(intro)
 	add_child(preload("res://scripts/bandages.gd").new())
 	var finale = preload("res://scripts/finale.gd").new()

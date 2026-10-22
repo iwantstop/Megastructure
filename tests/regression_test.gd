@@ -178,18 +178,23 @@ func _prologue() -> void:
 		if hero:
 			break
 		await process_frame
-	var menu_ready := await _until(func() -> bool: return prologue.menu != null and prologue.menu.modulate.a > 0.9, 20.0)
-	_check("главное меню: «Начать», «Настройки», «Выход»", menu_ready and prologue.menu.get_child_count() == 3)
-	prologue.menu.get_child(0).emit_signal("pressed")   # «Начать»
+	# Предыстория — сразу после загрузки, до меню; каждый слайд ждёт пробела.
 	for i in prologue.PARAGRAPHS.size():
-		var shown := await _until(func() -> bool: return prologue.index == i and prologue.text.modulate.a > 0.99, 20.0)
-		var y_before: float = hero.global_position.y
+		var shown := await _until(func() -> bool: return prologue.index == i and prologue.text.modulate.a > 0.99, 30.0)
 		await _wait(2.0)
-		_check("слайд %d стоит без пробела, падение не началось" % (i + 1), shown and prologue.index == i and is_equal_approx(hero.global_position.y, y_before))
+		_check("слайд %d стоит без пробела (меню ещё нет)" % (i + 1), shown and prologue.index == i and prologue.menu == null)
 		_tap(KEY_SPACE)
+	var menu_ready := await _until(func() -> bool: return prologue.menu != null and prologue.menu.modulate.a > 0.9, 20.0)
+	_check("после предыстории — главное меню: «Начать», «Настройки», «Выход»", menu_ready and prologue.menu.get_child_count() == 3)
+	prologue.menu.get_child(0).emit_signal("pressed")   # «Начать»
+	var intro_node := _find("intro.gd")
+	var on_roof := await _until(func() -> bool: return intro_node.state == intro_node.State.ROOF and not paused, 5.0)
+	_check("«Начать» — герой на крыше самой высокой башни (как после финала)", on_roof
+		and hero.global_position.distance_to(preload("res://scripts/structures.gd").ROOF_SPOT) < 1.5)
+	var stepped := await _until(func() -> bool: return intro_node.state == intro_node.State.FALLING, 12.0)
 	var y0: float = hero.global_position.y
-	await _wait(3.0)
-	_check("после последнего пробела — падение", y0 - hero.global_position.y > 20.0, "пролетел %.0f м за 3 с" % (y0 - hero.global_position.y))
+	await _wait(2.0)
+	_check("шагнул с края — падение", stepped and y0 - hero.global_position.y > 20.0, "пролетел %.0f м за 2 с" % (y0 - hero.global_position.y))
 
 
 func _fall_and_wake() -> void:
@@ -212,6 +217,12 @@ func _fall_and_wake() -> void:
 	_check("паника: обзор шире с разгоном", max_fov > 95.0, "до %.0f°" % max_fov)
 	_check("паника: голова поворачивается плавно, без рывков", max_speed < 6.0,
 		"наибольшая скорость %.0f°/с; подвисших кадров: %d" % [rad_to_deg(max_speed), hitches])
+	await process_frame
+	_check("пробил крышу летающей машины — вид из салона", intro.state == intro.State.CAR and intro.car.cam.current)
+	await _wait(1.0)
+	_check("в салоне воет сигнализация, мигает лампа", intro.car.alarm.playing)
+	var landed := await _until(func() -> bool: return intro.state != intro.State.CAR, 15.0)
+	_check("машина по спирали падает и разбивается — тьма", landed and intro.fade.color.a > 0.99)
 	await _wait(5.0)
 	_check("во тьме текст ждёт пробел", intro.state == intro.State.STORY and intro.story.modulate.a > 0.99,
 		"\"%s…\"" % intro.story.text.substr(0, 30))
@@ -221,6 +232,9 @@ func _fall_and_wake() -> void:
 	await _wait(1.0)
 	var to_peak := Mountain.CENTER + Vector3.UP * Mountain.PEAK
 	_check("тьма спала — взгляд на гору", _yaw_error_to(to_peak) < 3.0, "ошибка %.1f°" % _yaw_error_to(to_peak))
+	var wreck: Node3D = intro.car
+	_check("рядом горит разбитая машина", wreck.phase == wreck.Phase.WRECK and wreck.flames.emitting
+		and wreck.global_position.distance_to(player.global_position) < 12.0, "%.0f м" % wreck.global_position.distance_to(player.global_position))
 	await _wait(1.5)
 	_check("лежит и сам не встаёт", player.locked and intro.state <= intro.State.HINT)
 	await _until(func() -> bool: return intro.state == intro.State.HINT and intro.hint.modulate.a > 0.9, 8.0)

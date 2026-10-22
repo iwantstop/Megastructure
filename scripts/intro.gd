@@ -3,12 +3,17 @@ extends Node
 const Structures = preload("res://scripts/structures.gd")
 
 ## Вступление.
+## 0. Новая игра (from_roof): герой стоит на крыше самой высокой башни — там же, куда возвращает финал
+##    (петля), — смотрит с края на город, потом шагает вниз; короткая тьма — и он уже падает.
 ## 1. Падение: герой уже сорвался с крыши самой высокой башни и летит вниз на спине,
 ##    глядя вверх, на удаляющуюся крышу. В ушах — нарастающий рёв ветра. Как падение с крыши в Mirror's Edge
 ##    Catalyst: тело медленно заваливается, голова плавно оборачивается к земле и обратно, ветер мелко треплет
 ##    кадр, обзор с разгоном шире.
-## 2. Удар о землю: тьма, глухой удар, тишина. Во тьме проступает текст (STORY) — ждёт пробел.
-## 3. Тьма спадает: он лежит у подножия башни и смотрит в сторону горы, чуть выше неё. Мимо пробегают крысы.
+## 2. На высоте ~200 м под ним пролетает летающая машина — он пробивает ей крышу. Дальше — вид из салона
+##    (crash_car.gd): дыра над головой, тревожная лампа, сигнализация, машина по спирали падает к подножию башни.
+## 3. Удар о землю: тьма, глухой удар, тишина. Во тьме проступает текст (STORY) — ждёт пробел.
+## 4. Тьма спадает: он лежит у подножия башни и смотрит в сторону горы, чуть выше неё; рядом горит машина.
+##    Мимо пробегают крысы.
 ##    Сначала он просто лежит (LIE_TIME), потом всплывает подсказка «W — подняться».
 ##    Встаёт он только по нажатию W — сам не поднимается. Осмотреться можно мышью.
 
@@ -20,8 +25,11 @@ const GROUND := Structures.HERO_SPOT  # где герой лежит после 
 const FALL_FROM := 380.0             # с какой высоты начинается падение (крыша — на 760 м)
 const STORY := "Я лежал на земле, глядя в ледяные тучи, а мимо моего тела сновали крысы. В этот момент пришло осознание: даже умереть мне не дано — так же, как и обрести счастье в городе, ставшем моей тюрьмой."
 const LOOK_ABOVE_PEAK := 4.0         # после пробуждения взгляд — на гору и на столько градусов выше вершины
+const ROOF_LOOK := 4.0               # столько он стоит на крыше, глядя на город
+const ROOF_STEP := 1.8               # шаг к краю и взгляд вниз
+const ROOF_EDGE_Z := 95.4            # край крыши (грань башни — z = 95), к которому он подходит
 
-enum State { FALLING, BLACKOUT, STORY, LYING, HINT, GETTING_UP, DONE }
+enum State { ROOF, FALLING, CAR, BLACKOUT, STORY, LYING, HINT, GETTING_UP, DONE }
 
 var player: CharacterBody3D
 var layer: CanvasLayer
@@ -33,8 +41,12 @@ var black_tween: Tween
 var panic_target := Vector2.ZERO
 var panic_jerk := 0.0
 var state := State.FALLING
+var from_roof := false               # новая игра: начать на крыше (world.gd), иначе — сразу падение
+var step_tween: Tween                # шаг с края крыши
 var t := 0.0
 var rat_mat := StandardMaterial3D.new()
+var car: Node3D                      # летающая машина, в которую он падает (crash_car.gd)
+var looked_down := false
 
 var wind := Synth.WindRoar.new()
 
@@ -44,7 +56,10 @@ func setup(p_player: CharacterBody3D) -> void:
 
 
 func _ready() -> void:
-	player.fall_on_back(GROUND + Vector3.UP * FALL_FROM, 20.0)
+	if from_roof:
+		_stand_on_roof()
+	else:
+		player.fall_on_back(GROUND + Vector3.UP * FALL_FROM, 20.0)
 	player.last_safe = GROUND
 
 	layer = CanvasLayer.new()
@@ -71,18 +86,40 @@ func _ready() -> void:
 
 	add_child(wind)
 	wind.start()
+	if from_roof:
+		wind.fill(0.12)   # на крыше — ровный высотный ветер
+	car = preload("res://scripts/crash_car.gd").new()
+	player.get_parent().add_child.call_deferred(car)
+	car.crashed.connect(_impact)
 
 
 func _process(delta: float) -> void:
 	t += delta
 	match state:
+		State.ROOF:
+			if t > ROOF_LOOK and step_tween == null:
+				_step_off()
 		State.FALLING:
 			var speed := -player.velocity.y
 			player.fall_shake = clampf(speed / 50.0, 0.0, 1.0) * 0.5   # лёгкая дрожь; главное движение — panic
 			_panic(clampf(0.35 + speed / 55.0, 0.0, 1.0), delta)
 			wind.fill(clampf(speed / 55.0, 0.15, 1.0))
+			# Машина подлетает так, чтобы оказаться под ним к удару; долетел до её крыши — он в салоне.
+			var above: float = player.global_position.y - (car.IMPACT.y + car.ROOF)
+			if car.is_inside_tree():
+				car.approach(above / maxf(speed, 1.0))
+				if above / maxf(speed, 1.0) < 1.4 and not looked_down:
+					# Последний миг: голова запрокидывается — он видит под собой летящую на него крышу машины.
+					looked_down = true
+					panic_target = Vector2.ZERO
+					panic_jerk = 10.0
+					create_tween().tween_property(player, "target_pitch", -PI / 2.0 - player.LIE_PITCH + 0.15, 0.45) 						.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+				if above <= 0.0:
+					_into_car()
 			if player.is_on_floor():
 				_impact()
+		State.CAR:
+			wind.fill(clampf(0.55 + car.s * 0.45, 0.0, 1.0))   # в дыру в крыше ревёт ветер
 		State.LYING:
 			if t > LIE_TIME:
 				_show_hint()
@@ -120,8 +157,54 @@ func _panic(level: float, delta: float) -> void:
 	player.panic_look = player.panic_look.lerp(panic_target, 1.0 - exp(-4.5 * delta))
 
 
+## Новая игра: стоит на крыше, у края, лицом к городу; управление заблокировано, оглядеться можно.
+func _stand_on_roof() -> void:
+	state = State.ROOF
+	t = 0.0
+	player.locked = true
+	player.lying = 0.0
+	player.global_position = Structures.ROOF_SPOT
+	player.velocity = Vector3.ZERO
+	player.rotation.y = 0.0   # -Z — к краю, над городом
+	player.target_yaw = 0.0
+	player.target_pitch = -0.12
+	player.head.rotation.x = player.target_pitch
+
+
+## Шаг с края: подходит к самому краю, взгляд — вниз, в пропасть улиц; короткая тьма — он уже летит.
+func _step_off() -> void:
+	player.flying = true    # не упасть раньше времени (и не задеть парапет)
+	var edge := Vector3(player.global_position.x, player.global_position.y, ROOF_EDGE_Z)
+	var tween := create_tween().set_trans(Tween.TRANS_SINE)
+	step_tween = tween
+	tween.tween_property(player, "global_position", edge, ROOF_STEP)
+	tween.parallel().tween_property(player, "target_pitch", -1.1, ROOF_STEP)
+	tween.tween_property(fade, "color:a", 1.0, 0.18)
+	tween.tween_callback(func() -> void:
+		player.flying = false
+		player.fall_on_back(GROUND + Vector3.UP * FALL_FROM, 20.0))
+	tween.tween_callback(func() -> void: state = State.FALLING)   # дальше всё как было: падение, машина…
+	tween.tween_property(fade, "color:a", 0.0, 0.45)
+
+
+## Пробил крышу машины: короткая тьма от удара — и он уже в салоне (дальше — машина, crash_car.gd).
+## Сам герой ждёт на земле, у подножия башни: там он очнётся.
+func _into_car() -> void:
+	state = State.CAR
+	player.end_fall()
+	player.global_position = GROUND
+	player.velocity = Vector3.ZERO
+	fade.color = Color(1, 1, 1, 0.9)   # вспышка удара
+	var flash := create_tween()
+	flash.tween_property(fade, "color:a", 0.0, 0.25)
+	flash.tween_callback(func() -> void: fade.color = Color(0, 0, 0, 0))
+	car.begin()
+
+
 ## Удар о землю: ветер обрывается, тьма и глухой удар, потом он приходит в себя.
 func _impact() -> void:
+	if state != State.FALLING and state != State.CAR:
+		return
 	state = State.BLACKOUT
 	player.end_fall()
 	player.global_position = GROUND
@@ -198,14 +281,20 @@ func skip() -> void:
 		return
 	if black_tween:
 		black_tween.kill()
+	if step_tween:
+		step_tween.kill()
 	if story:
 		story.modulate.a = 0.0
 		story_hint.modulate.a = 0.0
-	if state == State.FALLING:
+	if state == State.FALLING or state == State.CAR or state == State.ROOF:
+		player.flying = false
 		wind.stop()
 		player.end_fall()
 		player.global_position = GROUND
 		player.velocity = Vector3.ZERO
+		state = State.BLACKOUT   # чтобы удар машины о землю уже не запускал тьму
+	if car:
+		car.wreck_now()   # машина уже лежит рядом и горит
 	fade.color.a = 0.0
 	_get_up()
 

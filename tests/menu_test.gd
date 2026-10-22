@@ -1,7 +1,7 @@
 extends SceneTree
 
-## Меню и настройки: главное меню на экране названия → «Настройки» (громкость меняется и сохраняется) → «Назад»
-## → «Начать» (пролог пошёл) → пролог пробелами → падение → Esc: пауза (мир стоит) → «Настройки» → Esc назад →
+## Меню и настройки: предыстория пробелами → главное меню → «Настройки» (громкость меняется и сохраняется) → «Назад»
+## → «Начать» (герой на крыше, шагает с края — падение) → Esc: пауза (мир стоит) → «Настройки» → Esc назад →
 ## Esc: игра идёт. Снимки — screenshots/menu_*.png. Настройки игрока в конце возвращаются как были.
 ## Запуск (с окном): godot --path . -s tests/menu_test.gd -- --prologue
 
@@ -53,11 +53,20 @@ func _run() -> void:
 		for c in world.get_children():
 			if c.get_script() and str(c.get_script().resource_path).ends_with("prologue.gd"):
 				prologue = c
-		if prologue and prologue.menu:
+		if prologue and prologue.playing:
 			break
 		await process_frame
+	# Сначала — предыстория: абзацы по пробелу, ещё до меню.
+	_check("после загрузки сразу пошла предыстория (до меню)", prologue != null and prologue.playing and prologue.menu == null)
+	for i in prologue.PARAGRAPHS.size():
+		while not (prologue.index == i and prologue.text.modulate.a > 0.99):
+			await process_frame
+		await _wait(0.8)
+		_key(KEY_SPACE)
+	while prologue.menu == null:
+		await process_frame
 	await _wait(1.2)
-	_check("главное меню под названием", prologue != null and prologue.menu != null and prologue.menu.modulate.a > 0.9,
+	_check("после последнего абзаца — главное меню (без названия)", prologue.menu.modulate.a > 0.9 and not "TITLE" in prologue.get_property_list().map(func(p: Dictionary) -> String: return p.name),
 		", ".join(prologue.menu.get_children().map(func(b: Button) -> String: return b.text)))
 	await _shot("main")
 	_check("игра на паузе, пока в меню", paused)
@@ -79,15 +88,24 @@ func _run() -> void:
 	Progress.cigarettes = 3
 	Game.smoke.left_in_pack = 3
 	prologue.menu.get_child(0).emit_signal("pressed")
-	await _wait(3.5)
-	_check("«Начать» — пролог пошёл", prologue.playing and prologue.index == 0)
 	_check("новая игра — пачка снова полная", Progress.cigarettes == Progress.FULL_PACK and Game.smoke.left_in_pack == Progress.FULL_PACK,
 		"%d сигарет" % Game.smoke.left_in_pack)
-	for i in prologue.PARAGRAPHS.size():
-		while not (prologue.index == i and prologue.text.modulate.a > 0.99):
-			await process_frame
-		await _wait(0.8)
-		_key(KEY_SPACE)
+	await _wait(2.5)
+	var hero: Node3D = get_first_node_in_group("player")
+	var intro_node: Node = null
+	for c in world.get_children():
+		if c.get_script() and str(c.get_script().resource_path).ends_with("intro.gd"):
+			intro_node = c
+	_check("«Начать» — герой на крыше самой высокой башни (как после финала)", not paused and intro_node.state == intro_node.State.ROOF
+		and hero.global_position.distance_to(preload("res://scripts/structures.gd").ROOF_SPOT) < 1.0)
+	await _shot("roof")
+	var fell := false
+	for i in 900:
+		if intro_node.state == intro_node.State.FALLING:
+			fell = true
+			break
+		await process_frame
+	_check("шагнул с края — падение", fell)
 	var player: Node3D = null
 	for i in 600:
 		player = get_first_node_in_group("player")
@@ -102,9 +120,9 @@ func _run() -> void:
 			pause = c
 	_key(KEY_ESCAPE)
 	await _wait(0.3)
-	var y1: float = player.global_position.y
+	var clock1: float = intro_node.t   # время вступления: падение или машина — на паузе не идёт
 	await _wait(1.0)
-	_check("Esc — пауза: мир стоит", pause.open and paused and is_equal_approx(player.global_position.y, y1))
+	_check("Esc — пауза: мир стоит", pause.open and paused and is_equal_approx(intro_node.t, clock1))
 	await _shot("pause")
 	pause.list.get_child(1).emit_signal("pressed")
 	await _wait(0.3)
@@ -114,7 +132,7 @@ func _run() -> void:
 	_check("Esc — из настроек обратно в паузу", not pause.settings.visible and pause.open)
 	_key(KEY_ESCAPE)
 	await _wait(1.0)
-	_check("Esc — игра идёт дальше", not pause.open and not paused and player.global_position.y < y1 - 1.0)
+	_check("Esc — игра идёт дальше", not pause.open and not paused and intro_node.t > clock1 + 0.5)
 	# Вернуть настройки игрока как были.
 	if saved_before == "":
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(Settings.FILE))
