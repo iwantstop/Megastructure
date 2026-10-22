@@ -104,13 +104,13 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.physical_keycode == KEY_Q and event.pressed and not event.echo:
-		if (state == State.SMOKING or state == State.UNLIT) and not player.locked:
+		if (state == State.SMOKING or state == State.UNLIT) and _hands_free():
 			throw_butt()
 			get_viewport().set_input_as_handled()
 		return
 	if not (event is InputEventKey and event.physical_keycode == KEY_T and not event.echo):
 		return
-	if player.locked or player.flying:
+	if not _hands_free() or player.flying:
 		return
 	if event.pressed:
 		match state:
@@ -134,7 +134,7 @@ func _process(delta: float) -> void:
 	position = Vector3(sin(ms * 31.0) * sin(ms * 7.3), sin(ms * 27.0 + 1.0) * sin(ms * 5.1), 0.0) * 0.006 * shake
 	rotation.z = sin(ms * 23.0) * sin(ms * 3.7) * 0.03 * shake
 	if state == State.SMOKING:
-		var holding: bool = Input.is_physical_key_pressed(KEY_T) and not player.locked
+		var holding: bool = Input.is_physical_key_pressed(KEY_T) and _hands_free()
 		if holding and not puffing:
 			puffing = true
 			puff_time = 0.0
@@ -163,6 +163,11 @@ func _process(delta: float) -> void:
 		var f := 0.85 + 0.15 * sin(Time.get_ticks_msec() * 0.02) + 0.08 * sin(Time.get_ticks_msec() * 0.053)
 		flame.scale = Vector3(1.0, 2.6 * f, 1.0)
 		flame_light.light_energy = 0.9 * f
+
+
+## Руки свободны: герой не скован сценой (падение, припадок, финал) — или просто сидит на скамейке.
+func _hands_free() -> bool:
+	return not player.locked or player.seated
 
 
 ## Финал и прочие сцены: всё убрать из рук.

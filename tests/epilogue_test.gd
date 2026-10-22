@@ -60,6 +60,14 @@ func _process(delta: float) -> bool:
 			stage = 2
 			t = 0.0
 		2:
+			var veil: Color = finale.veil.color
+			if veil.a > 0.99 and veil.r > 0.9 and not has_meta("light"):
+				set_meta("light", true)   # экран залило светом
+				print("EPILOGUE light flood at t=%.1f" % t)
+				root.get_viewport().get_texture().get_image().save_png("res://screenshots/epilogue_light.png")
+			if veil.a > 0.99 and veil.r < 0.02 and has_meta("light") and not has_meta("black"):
+				set_meta("black", true)
+				print("EPILOGUE black at t=%.1f" % t)
 			if finale.slide != last_slide and finale.slide_ready:
 				last_slide = finale.slide
 				shown_at = t

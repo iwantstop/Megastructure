@@ -18,6 +18,8 @@ const MAX_FALL_SPEED := 55.0  # предельная скорость паден
 const FOV := 85.0
 const PANIC_FOV := 18.0      # на столько шире обзор в панике при падении
 const LIE_PITCH := 1.05      # лёжа на спине взгляд запрокинут вверх на столько, рад
+const PIT_Y := -10.0         # ниже этого нормального пола нет (мост и улицы — на 0): стоит — значит застрял под краем
+const PIT_WAIT := 2.0
 
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var head: Node3D
@@ -27,6 +29,7 @@ var collision: CollisionShape3D
 var flying := false
 var fly_speed := 20.0
 var locked := false   # во вступлении: осматриваться можно, ходить — нет
+var seated := false   # сидит на скамейке: ходить нельзя, но руки свободны — курить можно
 var lying := 0.0      # 1 — лежит на спине и смотрит в небо, 0 — стоит
 var kneeling := 0.0   # 1 — стоит на коленях (финал на вершине)
 var fall_shake := 0.0  # тряска от встречного ветра при падении (вступление)
@@ -55,6 +58,7 @@ var was_on_floor := true
 var fall_speed := 0.0
 var last_safe := Vector3.ZERO
 var safe_timer := 0.0
+var pit_time := 0.0       # сколько стоит на склоне под бездной
 
 
 func _ready() -> void:
@@ -161,13 +165,16 @@ func _physics_process(delta: float) -> void:
 		land_dip = clampf(fall_speed * 0.015, 0.0, 0.1)
 	was_on_floor = is_on_floor()
 
-	# Сорвался в бездну — возвращаемся туда, где твёрдо стоял полсекунды назад.
-	if is_on_floor():
+	# Сорвался в бездну — возвращаемся туда, где твёрдо стоял полсекунды назад. Ниже моста и улиц
+	# нормального пола нет: застрял на склоне под краем (PIT_Y) — тоже возвращаем, через пару секунд.
+	if is_on_floor() and global_position.y > PIT_Y:
 		safe_timer -= delta
 		if safe_timer <= 0.0:
 			last_safe = global_position
 			safe_timer = 0.5
-	if global_position.y < -150.0:
+	pit_time = pit_time + delta if is_on_floor() and global_position.y < PIT_Y else 0.0
+	if global_position.y < -150.0 or pit_time > PIT_WAIT:
+		pit_time = 0.0
 		global_position = last_safe + Vector3.UP * 0.5
 		velocity = Vector3.ZERO
 

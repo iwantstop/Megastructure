@@ -145,6 +145,29 @@ func _run() -> void:
 	_tap(KEY_E)
 	await _wait(2.5)
 	_check("E — встал, всё как было", not bench.sitting and not player.locked and is_equal_approx(Engine.time_scale, 1.0))
+	# Сидя на скамейке — курить можно: с пустыми руками сел, T — сигарета из пачки; встал — время обычное.
+	smoke.put_away()
+	await _wait(1.5)
+	_place(bench.SPOT + Vector3(1.6, 0.5, 0), bench.SPOT)
+	await _wait(1.0)
+	_tap(KEY_E)
+	await _wait(2.5)
+	_tap(KEY_T)
+	await _wait(4.0)
+	var took_seated: bool = smoke.state != smoke.State.IDLE
+	_tap(KEY_E)
+	await _wait(5.0)
+	_check("сидя на скамейке курить можно; встал — время обычное", took_seated and not player.locked and is_equal_approx(Engine.time_scale, 1.0),
+		"сигарета: %s, время ×%.1f" % [smoke.State.keys()[smoke.state], Engine.time_scale])
+	# Сел и сразу встал (время ещё не успело разогнаться) — потом оно не должно разогнаться само.
+	_place(bench.SPOT + Vector3(1.6, 0.5, 0), bench.SPOT)
+	await _wait(1.0)
+	_tap(KEY_E)
+	await _wait(2.0)
+	_tap(KEY_E)
+	await _wait(5.0)
+	_check("сел и сразу встал — время обычное", not bench.sitting and not player.locked and is_equal_approx(Engine.time_scale, 1.0),
+		"время ×%.1f" % Engine.time_scale)
 
 	# 7. Снимки: три кадра в разных местах.
 	var before := DirAccess.get_files_at("user://photos").size() if DirAccess.dir_exists_absolute("user://photos") else 0

@@ -10,7 +10,7 @@ const VOICES := [
 	preload("res://assets/sounds/ads/ad_5.wav"), preload("res://assets/sounds/ads/ad_6.wav"),
 	preload("res://assets/sounds/ads/ad_7.wav"), preload("res://assets/sounds/ads/ad_8.wav"),
 ]
-const PAUSE := Vector2(25.0, 55.0)   # между фразами, с
+const PAUSE := Vector2(15.0, 35.0)   # между фразами, с
 const HEAR := 90.0                   # дальше этого экран не слышно, м
 const PITCH := 0.84                  # ниже и медленнее записи — обезличенно
 const Structures = preload("res://scripts/structures.gd")
@@ -33,9 +33,10 @@ func _ready() -> void:
 	speaker = AudioStreamPlayer3D.new()
 	speaker.bus = &"Ads"
 	speaker.pitch_scale = PITCH
-	speaker.unit_size = 14.0
+	speaker.unit_size = 35.0              # гаснет с расстоянием медленно — громкоговоритель слышно по всей улице
 	speaker.max_distance = HEAR
-	speaker.volume_db = 2.0
+	speaker.volume_db = 6.0
+	speaker.attenuation_filter_db = 0.0   # без «завала верхов» вдали — речь остаётся разборчивой
 	add_child(speaker)
 
 

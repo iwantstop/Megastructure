@@ -77,7 +77,7 @@ static func make_buses() -> void:
 	var horn := AudioEffectDistortion.new()
 	horn.mode = AudioEffectDistortion.MODE_OVERDRIVE
 	horn.drive = 0.35
-	horn.post_gain = -4.0
+	horn.post_gain = -1.0
 	AudioServer.add_bus_effect(ads, horn)
 	var street := AudioEffectReverb.new()
 	street.predelay_msec = 140.0
@@ -85,8 +85,8 @@ static func make_buses() -> void:
 	street.room_size = 0.95
 	street.damping = 0.35
 	street.spread = 1.0
-	street.dry = 0.55
-	street.wet = 0.6
+	street.dry = 0.8
+	street.wet = 0.55
 	AudioServer.add_bus_effect(ads, street)
 
 

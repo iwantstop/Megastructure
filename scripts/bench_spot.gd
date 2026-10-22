@@ -18,6 +18,7 @@ var sitting := false
 var near := false
 var busy := false
 var fog_tween: Tween
+var sit_tween: Tween     # сесть и разогнать время — обрывается, если встал раньше
 
 
 func _ready() -> void:
@@ -84,12 +85,14 @@ func sit() -> void:
 	var yaw := atan2(-face.x, -face.z)
 	var from_yaw: float = player.target_yaw
 	var tween := create_tween().set_parallel().set_ignore_time_scale(true).set_trans(Tween.TRANS_SINE)
+	sit_tween = tween
 	tween.tween_property(player, "global_position", seat, SIT_TIME)
 	tween.tween_property(player, "target_yaw", from_yaw + angle_difference(from_yaw, yaw), SIT_TIME)
 	tween.tween_property(player, "target_pitch", SIT_PITCH, SIT_TIME)   # поверх поручня — вдаль
 	tween.tween_property(player, "kneeling", SIT_LOWER, SIT_TIME)
 	tween.chain().tween_callback(func() -> void:
 		sitting = true
+		player.seated = true   # сидя курить можно
 		busy = false
 		if Game.hud:
 			Game.hud.action_hint(HINT_STAND, true))
@@ -102,12 +105,16 @@ func stand() -> void:
 	var player := Game.player
 	busy = true
 	sitting = false
+	player.seated = false
 	if Game.hud:
 		Game.hud.action_hint(HINT_STAND, false)
+	if sit_tween:
+		sit_tween.kill()   # встал раньше, чем время разогналось, — разгон не должен продолжиться после
 	var tween := create_tween().set_parallel().set_ignore_time_scale(true).set_trans(Tween.TRANS_SINE)
 	tween.tween_method(_set_time, Engine.time_scale, 1.0, 1.0)
 	tween.tween_property(player, "kneeling", 0.0, SIT_TIME)
 	tween.chain().tween_callback(func() -> void:
+		Engine.time_scale = 1.0
 		player.locked = false
 		busy = false)
 	_fog_to(0.0, 5.0)

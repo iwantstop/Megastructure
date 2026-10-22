@@ -3,13 +3,17 @@ extends CanvasLayer
 ## Финал на вершине. Герой падает на колени, лицом к солнцу. Пока внизу по слову проступает
 ## «Это...Всё...Я», перед ним, со стороны солнца, в последний раз появляется ангел — а на слове «Я»
 ## за её спиной взрывается солнце: ослепительное ядро, ударная волна по небу, вспышка, гул.
-## Потом он ложится, закрывает глаза; мир медленно растворяется в тёплом свете, потом в темноте.
+## Через секунду после взрыва экран заливает светом, свет плавно уходит в черноту, звук мира стихает.
 ## В темноте — заключительные слайды (EPILOGUE), как пролог: по центру, каждый ждёт пробела. Под текстом —
 ## снимки, которые игрок сделал за этот круг (photos.gd): плавно всплывают из темноты вокруг текста, без рамок,
 ## на каждом слайде — ещё несколько.
 ## Последний растаял — и он снова стоит на крыше той самой башни, с которой прыгнул. Круг замкнулся.
 
-const SILENCE := 10.0  # сколько он смотрит на солнце, стоя на коленях
+const LIGHT_AFTER := 1.0       # через столько секунд после взрыва экран заливает светом…
+const LIGHT_IN := 1.5          # …за столько секунд…
+const LIGHT_HOLD := 1.0        # …свет держится…
+const TO_BLACK := 3.5          # …и плавно уходит в черноту, после — слайды
+const WHITE := Color(1.0, 0.93, 0.82, 1.0)
 ## Фраза проступает по частям в одном субтитре: «Это...» → «Это...Всё...» → «Это...Всё...Я».
 const REALIZATION := ["Это...", "Всё...", "Я"]
 const WORD_PAUSE := 1.6        # пауза перед следующей частью, с
@@ -80,17 +84,7 @@ func start() -> void:
 	tween.tween_interval(1.0)
 	tween.tween_property(player, "kneeling", 1.0, 3.0).set_trans(Tween.TRANS_SINE)  # падает на колени
 	tween.tween_interval(1.5)
-	tween.tween_callback(_realize)
-	tween.tween_interval(SILENCE - 1.5)
-	# Ложится на спину, смотрит в небо и закрывает глаза.
-	tween.tween_property(player, "kneeling", 0.0, 3.0)
-	tween.parallel().tween_property(player, "lying", 1.0, 4.0).set_trans(Tween.TRANS_SINE)
-	tween.tween_interval(3.0)
-	tween.tween_property(veil, "color:a", 1.0, 8.0)
-	tween.parallel().tween_method(_fade_world_sound, 0.0, -60.0, 10.0)  # дождь, ветер и музыка стихают
-	tween.tween_property(veil, "color", Color(0, 0, 0, 1), 4.0)
-	tween.tween_interval(1.5)
-	tween.tween_callback(_epilogue)
+	tween.tween_callback(_realize)   # дальше: взрыв солнца → свет → чернота → слайды (_sun_explodes)
 
 
 ## Заключительные слайды на чёрном: проявляются по одному, пробел — следующий; после последнего текст тает.
@@ -314,14 +308,27 @@ func _sun_explodes() -> void:
 	tween.tween_property(core_mat, "emission_energy_multiplier", 0.0, 3.5).set_delay(0.8).set_trans(Tween.TRANS_SINE)
 	tween.tween_property(ring, "scale", Vector3.ONE * 2600.0, 3.0).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tween.tween_property(ring_mat, "emission_energy_multiplier", 0.0, 3.0)
-	# Вспышка: экран заливает тёплым светом и отпускает (дальше финал снова набирает свет сам).
-	tween.tween_property(veil, "color:a", 0.85, 0.12)          # яркая вспышка…
-	tween.chain().tween_property(veil, "color:a", 0.05, 1.1).set_trans(Tween.TRANS_SINE)  # …и быстро отпускает: виден диск и ангел
+	# Вспышка: экран вспыхивает тёплым светом и чуть отпускает — виден диск и ангел; через секунду — свет заливает всё.
 	tween.chain().tween_callback(func() -> void:
 		core.queue_free()
 		ring.queue_free())
+	var flash := create_tween()   # отдельно: не ждёт, пока догорят ядро и кольцо
+	flash.tween_property(veil, "color:a", 0.85, 0.12)          # яркая вспышка…
+	flash.tween_property(veil, "color:a", 0.3, LIGHT_AFTER - 0.12).set_trans(Tween.TRANS_SINE)
+	flash.tween_callback(_flood_with_light)
 
 	Synth.play_once(self, _boom_sound(), 2.0, &"Music")
+
+
+## Экран заливает светом, свет держится и плавно уходит в черноту; звук мира стихает. Потом — слайды.
+func _flood_with_light() -> void:
+	var tween := create_tween()
+	tween.tween_property(veil, "color", WHITE, LIGHT_IN).set_trans(Tween.TRANS_SINE)
+	tween.tween_interval(LIGHT_HOLD)
+	tween.tween_property(veil, "color", Color(0, 0, 0, 1), TO_BLACK).set_trans(Tween.TRANS_SINE)
+	tween.tween_interval(1.5)
+	tween.tween_callback(_epilogue)
+	create_tween().tween_method(_fade_world_sound, 0.0, -60.0, LIGHT_IN + LIGHT_HOLD + TO_BLACK)   # мир стихает
 
 
 ## Гул взрыва: низкий удар и долгий раскатистый шум.

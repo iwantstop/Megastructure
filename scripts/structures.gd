@@ -286,7 +286,8 @@ func _causeway() -> void:
 		b.box(Vector3(0, (ABYSS - 8.0) / 2.0, z), Vector3(14, -ABYSS - 8.0, 14), m.weathered, Basis.IDENTITY, false)
 		z -= 160.0
 	# Широкая площадка в конце — у подножия горы.
-	b.box(Vector3(0, -4, CAUSEWAY_END - 30.0), Vector3(80, 8, 60), m.ground)
+	# (на запад — до самой тропы: между площадкой и склоном была яма, из которой не выбраться)
+	b.box(Vector3(-17.5, -4, CAUSEWAY_END - 30.0), Vector3(115, 8, 60), m.ground)
 
 
 ## Основание постройки, уходящее в бездну (без коллизии — туда не дойти).
