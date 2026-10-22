@@ -24,6 +24,7 @@ const LOOK_BACK_TIME := 2.5  # за столько секунд герой об�
 const CITY_VIEW := Vector3(0, 120, -150)   # куда смотреть, оглядываясь: середина города, на уровне башен
 
 var warm_told := false
+var night := 0.0         # 0..1 — ночь на крыше во вступлении (intro.gd): небо и туман тёмные, солнца нет
 var fog_boost := 0.0     # 0..1 — туман сгущается (сидит на скамейке на мосту, bench_spot.gd)
 var override := -1.0  # из админ-панели: 0..1 — задать путь вручную, -1 — по положению игрока
 var progress := 0.0
@@ -63,6 +64,8 @@ func _process(delta: float) -> void:
 	var above := smoothstep(330.0, 450.0, p.y)
 	var target := maxf(away, above) if override < 0.0 else override
 	progress = lerpf(progress, target, clampf(delta * 0.6, 0.0, 1.0))
+	if night > 0.0:
+		progress = 0.0   # ночью на крыше — краски города, а не золото над облаками
 	if not warm_told and override < 0.0 and progress >= WARM_STORY_AT:
 		# Не поверх припадка и не одновременно с субтитром — дождаться, пока тот растает.
 		var hud := Game.hud
@@ -121,6 +124,23 @@ func _apply(k: float) -> void:
 	bodycam_mat.set_shader_parameter("grade_amount", lerpf(0.6, 0.3, smoothstep(AWAY_SHARE, 1.0, k)))  # над облаками — мягче: небо и солнце важнее
 	clouds_mat.set_shader_parameter("under_color", Color(0.28, 0.3, 0.34).lerp(Color(0.62, 0.6, 0.6), k))
 	clouds_mat.set_shader_parameter("coverage", lerpf(0.82, 0.55, k))
+	if night > 0.0:
+		_darken(night)
+	elif env.volumetric_fog_albedo != Color(0.62, 0.63, 0.65):
+		env.volumetric_fog_albedo = Color(0.62, 0.63, 0.65)
+		clouds_mat.set_shader_parameter("top_color", Color(0.96, 0.94, 0.9))
+
+
+## Ночь: тёмное небо (а с ним и туман — он берёт цвет неба), без солнца, тусклый рассеянный свет.
+func _darken(n: float) -> void:
+	sky.sky_top_color = sky.sky_top_color.lerp(Color(0.012, 0.014, 0.025), n)
+	sky.sky_horizon_color = sky.sky_horizon_color.lerp(Color(0.05, 0.05, 0.07), n)
+	sky.ground_horizon_color = sky.sky_horizon_color
+	sun.light_energy *= 1.0 - n * 0.95
+	env.ambient_light_energy = lerpf(env.ambient_light_energy, 0.25, n)
+	clouds_mat.set_shader_parameter("under_color", Color(0.28, 0.3, 0.34).lerp(Color(0.04, 0.045, 0.06), n))
+	clouds_mat.set_shader_parameter("top_color", Color(0.96, 0.94, 0.9).lerp(Color(0.07, 0.075, 0.09), n))   # море облаков под крышей — тёмное
+	env.volumetric_fog_albedo = Color(0.62, 0.63, 0.65).lerp(Color(0.08, 0.085, 0.1), n)               # дымка не светится
 
 
 ## Цвет гаммы на отрезке пути k (0 — город, 1 — над облаками), плавно между зонами.

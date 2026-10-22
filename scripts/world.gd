@@ -31,6 +31,7 @@ var _build_time := 0
 var time := 0.0
 var from_roof := false   # новая игра: вступление начинается на крыше самой высокой башни (как после финала)
 var built := false
+var intro_node: Node
 var shared_noise: NoiseTexture2D
 var neon: Array[StandardMaterial3D] = []
 var neon_energy: Array[float] = []
@@ -70,9 +71,10 @@ func _ready() -> void:
 		_build()
 		built = true
 		get_tree().paused = true           # вступление не начинается, пока не дочитан пролог и не нажато «Начать»
-		prologue.play_text()   # абзацы предыстории, после них — главное меню; «Начать» — герой на крыше
+		prologue.play_text()   # абзацы предыстории, после них — ночная крыша и главное меню
 		await prologue.finished
 		get_tree().paused = false
+		intro_node.start_game()   # «Начать игру» — разбег и прыжок
 		return
 	var loading := _make_loading_screen()
 	# Дать кадру с экраном загрузки отрисоваться: постройка мира займёт главный поток.
@@ -180,6 +182,7 @@ func _build() -> void:
 	journey.setup({"player": player, "sun": sun, "sky": sky_mat, "env": env, "rain": rain,
 		"bodycam_mat": bodycam.get_child(0).material, "fog": fog_volume.material, "clouds_mat": clouds_mat})
 	add_child(journey)
+	journey.night = 1.0 if from_roof else 0.0   # новая игра начинается ночью на крыше (рассветёт к пробуждению)
 	Game.journey = journey
 	var soundscape = preload("res://scripts/soundscape.gd").new()  # звук мира по зонам, шаги, музыка
 	soundscape.setup(player, journey)
@@ -187,6 +190,7 @@ func _build() -> void:
 	var intro = preload("res://scripts/intro.gd").new()
 	intro.setup(player)
 	intro.from_roof = from_roof   # в настоящей игре — с крыши башни; в тестах и демо — сразу падение
+	intro_node = intro
 	add_child(intro)
 	add_child(preload("res://scripts/bandages.gd").new())
 	var finale = preload("res://scripts/finale.gd").new()

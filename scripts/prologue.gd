@@ -1,10 +1,10 @@
 extends CanvasLayer
 
 ## Экран загрузки с прологом. Чёрный экран, «загрузка…» — строится мир. Потом абзацы предыстории по одному
-## медленно проявляются и тают; каждый остаётся на экране, пока игрок не нажмёт пробел. После последнего
-## («…и бросился вниз.») — главное меню («Начать», «Настройки», «Выход»). «Начать» — меню тает, и герой
-## стоит на крыше самой высокой башни (там же, куда возвращает финал, — петля); дальше вступление (intro.gd).
-## Пока идёт пролог и меню, игра на паузе.
+## медленно проявляются и тают; каждый остаётся на экране, пока игрок не нажмёт пробел (мир на паузе).
+## После последнего («…и бросился вниз.») тьма расходится: ночь, герой на крыше самой высокой башни (там же,
+## куда возвращает финал, — петля), мир живёт, и прямо на этом кадре — главное меню («Начать игру»,
+## «Настройки», «Выход»). «Начать игру» — кнопки тают, и без всяких загрузок он разбегается и прыгает (intro.gd).
 
 signal title_shown
 signal finished
@@ -28,6 +28,8 @@ var playing := false
 var tween: Tween
 var menu: VBoxContainer
 var settings: Control
+var ui: Control          # меню и настройки — поверх живого кадра (фон-тьма к тому времени уже растаял)
+var shade: ColorRect     # затемнение под настройками
 
 
 func _ready() -> void:
@@ -37,29 +39,38 @@ func _ready() -> void:
 	text = ScreenText.center(background, "", 24, Color(0.88, 0.87, 0.85, TEXT_ALPHA))
 	text.modulate.a = 0.0
 	hint = ScreenText.corner_hint(background, "загрузка…")
+	ui = Control.new()
+	ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(ui)
+	shade = ColorRect.new()
+	shade.color = Color(0, 0, 0, 0.7)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.hide()
+	ui.add_child(shade)
 	var t := create_tween()
 	t.tween_interval(0.3)   # дать кадру с «загрузкой» отрисоваться — дальше постройка займёт поток
 	t.tween_callback(func() -> void: title_shown.emit())
 
 
-## Пролог дочитан — проявляется главное меню.
+## Пролог дочитан — проявляется главное меню (поверх ночной крыши).
 func show_menu() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	menu = MenuUi.column(background, 0.0)
-	MenuUi.button(menu, "Начать", _start)
+	menu = MenuUi.column(ui, 150.0)
+	MenuUi.button(menu, "Начать игру", _start)
 	MenuUi.button(menu, "Настройки", _open_settings)
 	MenuUi.button(menu, "Выход", func() -> void: get_tree().quit())
 	menu.modulate.a = 0.0
 	settings = preload("res://scripts/settings_panel.gd").new()
 	settings.hide()
 	settings.back.connect(_close_settings)
-	background.add_child(settings)
+	ui.add_child(settings)
 	var fade := create_tween()
 	fade.tween_property(menu, "modulate:a", 1.0, 1.0).set_trans(Tween.TRANS_SINE)
 	menu.get_child(0).grab_focus()
 
 
-## «Начать»: новая игра — меню тает, игра начинается (герой на крыше).
+## «Начать игру»: новая игра — кнопки тают, игра сразу начинается (разбег и прыжок — intro.gd).
 func _start() -> void:
 	for b in menu.get_children():
 		b.disabled = true
@@ -70,11 +81,13 @@ func _start() -> void:
 
 func _open_settings() -> void:
 	menu.hide()
+	shade.show()
 	settings.open()
 
 
 func _close_settings() -> void:
 	settings.hide()
+	shade.hide()
 	menu.show()
 	menu.get_child(1).grab_focus()
 
@@ -122,23 +135,26 @@ func _next() -> void:
 	tween.tween_callback(func() -> void: shown_for = 0.0)
 
 
-## Последний абзац дочитан: текст и подсказка тают — главное меню.
+## Последний абзац дочитан: текст тает, мир снимается с паузы, тьма расходится — ночная крыша и меню.
 func _to_menu() -> void:
 	playing = false
+	add_to_group("main_menu")   # пока меню на экране, Esc не открывает паузу
 	if tween:
 		tween.kill()
 	tween = create_tween()
 	tween.tween_property(text, "modulate:a", 0.0, FADE * 0.7).set_trans(Tween.TRANS_SINE)
 	tween.parallel().tween_property(hint, "modulate:a", 0.0, 0.4)
-	tween.tween_callback(show_menu)
+	tween.tween_callback(func() -> void: get_tree().paused = false)
+	tween.tween_property(background, "modulate:a", 0.0, 2.5).set_trans(Tween.TRANS_SINE)
+	tween.parallel().tween_callback(show_menu).set_delay(1.2)
 
 
-## «Начать»: меню тает, игра снимается с паузы, чёрный экран уходит — герой на крыше.
+## «Начать игру»: кнопки тают — игра начинается.
 func _finish() -> void:
 	if tween:
 		tween.kill()
+	remove_from_group("main_menu")
 	tween = create_tween()
-	tween.tween_property(menu, "modulate:a", 0.0, 0.6)
+	tween.tween_property(menu, "modulate:a", 0.0, 0.5)
 	tween.tween_callback(func() -> void: finished.emit())
-	tween.tween_property(background, "modulate:a", 0.0, 1.6).set_trans(Tween.TRANS_SINE)
 	tween.tween_callback(queue_free)

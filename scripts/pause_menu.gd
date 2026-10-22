@@ -37,7 +37,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if open:
 		get_viewport().set_input_as_handled()
 		close()
-	elif not get_tree().paused:   # на паузе от пролога — не наша пауза
+	elif not get_tree().paused and get_tree().get_first_node_in_group("main_menu") == null:   # пролог и главное меню — не наша пауза
 		get_viewport().set_input_as_handled()
 		_open()
 

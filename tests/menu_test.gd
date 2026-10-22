@@ -68,8 +68,22 @@ func _run() -> void:
 	await _wait(1.2)
 	_check("после последнего абзаца — главное меню (без названия)", prologue.menu.modulate.a > 0.9 and not "TITLE" in prologue.get_property_list().map(func(p: Dictionary) -> String: return p.name),
 		", ".join(prologue.menu.get_children().map(func(b: Button) -> String: return b.text)))
+	await _wait(2.0)
 	await _shot("main")
-	_check("игра на паузе, пока в меню", paused)
+	var intro_node: Node = null
+	for c in world.get_children():
+		if c.get_script() and str(c.get_script().resource_path).ends_with("intro.gd"):
+			intro_node = c
+	var hero: Node3D = get_first_node_in_group("player")
+	_check("меню — прямо на кадре: ночь, герой на крыше самой высокой башни, мир живёт", not paused and intro_node.state == intro_node.State.ROOF
+		and hero.global_position.y > 755.0 and Game.journey.night > 0.99)
+	_key(KEY_ESCAPE)
+	await _wait(0.3)
+	var pause_node: Node = null
+	for c in world.get_children():
+		if c.get_script() and str(c.get_script().resource_path).ends_with("pause_menu.gd"):
+			pause_node = c
+	_check("Esc в главном меню не открывает паузу", not pause_node.open)
 	# Настройки
 	prologue.menu.get_child(1).emit_signal("pressed")
 	await _wait(0.5)
@@ -90,22 +104,18 @@ func _run() -> void:
 	prologue.menu.get_child(0).emit_signal("pressed")
 	_check("новая игра — пачка снова полная", Progress.cigarettes == Progress.FULL_PACK and Game.smoke.left_in_pack == Progress.FULL_PACK,
 		"%d сигарет" % Game.smoke.left_in_pack)
-	await _wait(2.5)
-	var hero: Node3D = get_first_node_in_group("player")
-	var intro_node: Node = null
-	for c in world.get_children():
-		if c.get_script() and str(c.get_script().resource_path).ends_with("intro.gd"):
-			intro_node = c
-	_check("«Начать» — герой на крыше самой высокой башни (как после финала)", not paused and intro_node.state == intro_node.State.ROOF
-		and hero.global_position.distance_to(preload("res://scripts/structures.gd").ROOF_SPOT) < 1.0)
-	await _shot("roof")
+	await _wait(1.0)
+	_check("«Начать игру» — кнопки исчезли, герой разбегается", prologue == null or not is_instance_valid(prologue) or prologue.menu.modulate.a < 0.05)
+	_check("…бежит к краю, камера трясётся", intro_node.running and Vector2(hero.velocity.x, hero.velocity.z).length() > 6.0 and hero.fall_shake > 0.2,
+		"%.1f м/с" % Vector2(hero.velocity.x, hero.velocity.z).length())
+	await _shot("run")
 	var fell := false
 	for i in 900:
 		if intro_node.state == intro_node.State.FALLING:
 			fell = true
 			break
 		await process_frame
-	_check("шагнул с края — падение", fell)
+	_check("прыгнул с края — падение", fell and intro_node.jumped)
 	var player: Node3D = null
 	for i in 600:
 		player = get_first_node_in_group("player")

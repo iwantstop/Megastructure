@@ -58,6 +58,8 @@ var was_on_floor := true
 var fall_speed := 0.0
 var last_safe := Vector3.ZERO
 var safe_timer := 0.0
+var scripted_run := Vector2.ZERO   # не ноль — бежит сам (вступление), управление при этом заблокировано
+var scripted_speed := 0.0
 var pit_time := 0.0       # сколько стоит на склоне под бездной
 
 
@@ -141,6 +143,8 @@ func _physics_process(delta: float) -> void:
 	if Input.is_physical_key_pressed(KEY_D):
 		input.x += 1
 	move_input = Vector2.ZERO if locked else input.normalized()
+	if scripted_run != Vector2.ZERO:
+		move_input = scripted_run   # вступление: разбег по крыше (intro.gd)
 
 	if flying:
 		_fly(move_input, delta)
@@ -153,6 +157,8 @@ func _physics_process(delta: float) -> void:
 		velocity.y = JUMP_VELOCITY
 
 	var speed := RUN_SPEED if Input.is_physical_key_pressed(KEY_SHIFT) else WALK_SPEED
+	if scripted_run != Vector2.ZERO:
+		speed = scripted_speed
 	var dir := transform.basis * Vector3(move_input.x, 0, move_input.y)
 	var accel := 10.0 if is_on_floor() else 2.0
 	velocity.x = lerpf(velocity.x, dir.x * speed, accel * delta)

@@ -186,15 +186,16 @@ func _prologue() -> void:
 		_tap(KEY_SPACE)
 	var menu_ready := await _until(func() -> bool: return prologue.menu != null and prologue.menu.modulate.a > 0.9, 20.0)
 	_check("после предыстории — главное меню: «Начать», «Настройки», «Выход»", menu_ready and prologue.menu.get_child_count() == 3)
-	prologue.menu.get_child(0).emit_signal("pressed")   # «Начать»
 	var intro_node := _find("intro.gd")
-	var on_roof := await _until(func() -> bool: return intro_node.state == intro_node.State.ROOF and not paused, 5.0)
-	_check("«Начать» — герой на крыше самой высокой башни (как после финала)", on_roof
-		and hero.global_position.distance_to(preload("res://scripts/structures.gd").ROOF_SPOT) < 1.5)
+	_check("меню — на кадре ночной крыши, мир живёт", not paused and intro_node.state == intro_node.State.ROOF
+		and hero.global_position.y > 755.0 and Game.journey.night > 0.99)
+	prologue.menu.get_child(0).emit_signal("pressed")   # «Начать игру»
+	var ran := await _until(func() -> bool: return intro_node.running and Vector2(hero.velocity.x, hero.velocity.z).length() > 6.0, 3.0)
+	_check("«Начать игру» — разбегается по крыше, камера трясётся", ran and hero.fall_shake > 0.1)
 	var stepped := await _until(func() -> bool: return intro_node.state == intro_node.State.FALLING, 12.0)
 	var y0: float = hero.global_position.y
 	await _wait(2.0)
-	_check("шагнул с края — падение", stepped and y0 - hero.global_position.y > 20.0, "пролетел %.0f м за 2 с" % (y0 - hero.global_position.y))
+	_check("прыгнул с края — падение", stepped and y0 - hero.global_position.y > 20.0, "пролетел %.0f м за 2 с" % (y0 - hero.global_position.y))
 
 
 func _fall_and_wake() -> void:
