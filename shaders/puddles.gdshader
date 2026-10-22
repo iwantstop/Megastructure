@@ -6,7 +6,7 @@ render_mode blend_mix, depth_draw_opaque, cull_back, shadows_disabled;
 
 uniform sampler2D shape_noise : repeat_enable, filter_linear_mipmap;
 uniform sampler2D detail_noise : repeat_enable, filter_linear_mipmap;
-uniform float coverage = 0.63;      // меньше — больше луж
+uniform float coverage = 0.7;       // меньше — больше луж
 uniform vec3 wet_color : source_color = vec3(0.26, 0.265, 0.29);
 uniform vec3 horizon : source_color = vec3(0.32, 0.34, 0.4);   // что отражает вода под скользящим взглядом: дымка у горизонта
 uniform float ripple_density = 1.6; // кругов на метр
