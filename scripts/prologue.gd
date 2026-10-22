@@ -8,6 +8,7 @@ extends CanvasLayer
 
 signal title_shown
 signal finished
+signal hovered(kind: String)   # мышь над пунктом меню: «start», «settings», «exit» или «» — герой смотрит туда (intro.gd)
 
 const TITLE := "Где мой ангел?"
 const PARAGRAPHS := [
@@ -56,10 +57,19 @@ func _ready() -> void:
 ## Пролог дочитан — проявляется главное меню (поверх ночной крыши).
 func show_menu() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	menu = MenuUi.column(ui, 150.0)
-	MenuUi.button(menu, "Начать игру", _start)
-	MenuUi.button(menu, "Настройки", _open_settings)
-	MenuUi.button(menu, "Выход", func() -> void: get_tree().quit())
+	menu = VBoxContainer.new()   # своё меню: слева внизу, крупно; пункт под мышью выдвигается и светлеет
+	menu.theme = MenuUi.theme()
+	menu.add_theme_constant_override("separation", 14)
+	menu.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	menu.offset_left = 110
+	menu.offset_right = 600
+	menu.offset_top = -330
+	menu.offset_bottom = -120
+	menu.alignment = BoxContainer.ALIGNMENT_END
+	ui.add_child(menu)
+	_item("Начать новую игру", "start", _start)
+	_item("Настройки", "settings", _open_settings)
+	_item("Выход из игры", "exit", func() -> void: get_tree().quit())
 	menu.modulate.a = 0.0
 	settings = preload("res://scripts/settings_panel.gd").new()
 	settings.hide()
@@ -67,7 +77,24 @@ func show_menu() -> void:
 	ui.add_child(settings)
 	var fade := create_tween()
 	fade.tween_property(menu, "modulate:a", 1.0, 1.0).set_trans(Tween.TRANS_SINE)
-	menu.get_child(0).grab_focus()
+
+
+## Пункт меню: под мышью (или в фокусе с клавиатуры) — выдвигается чертой и светлеет, герой смотрит туда.
+func _item(label: String, kind: String, action: Callable) -> void:
+	var b := MenuUi.button(menu, label, action, 30)
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.focus_mode = Control.FOCUS_NONE   # пробел не нажимает пункт случайно — только мышь
+	b.modulate.a = 0.6
+	var on := func() -> void:
+		b.text = "—  " + label
+		b.modulate.a = 1.0
+		hovered.emit(kind)
+	var off := func() -> void:
+		b.text = label
+		b.modulate.a = 0.6
+		hovered.emit("")
+	b.mouse_entered.connect(on)
+	b.mouse_exited.connect(off)
 
 
 ## «Начать игру»: новая игра — кнопки тают, игра сразу начинается (разбег и прыжок — intro.gd).
@@ -89,7 +116,6 @@ func _close_settings() -> void:
 	settings.hide()
 	shade.hide()
 	menu.show()
-	menu.get_child(1).grab_focus()
 
 
 ## Мир построен — начинаются абзацы.
@@ -149,7 +175,7 @@ func _to_menu() -> void:
 	tween.parallel().tween_callback(show_menu).set_delay(1.2)
 
 
-## «Начать игру»: кнопки тают — игра начинается.
+## «Начать новую игру»: кнопки тают — и это уже игра: он разбегается (без склеек).
 func _finish() -> void:
 	if tween:
 		tween.kill()

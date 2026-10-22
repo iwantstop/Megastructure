@@ -31,6 +31,13 @@ const ROOF_EDGE_Z := 95.4
 const RUN_SPEED := 9.0               # разбег, м/с
 const RUN_SHAKE := 0.45              # тряска камеры на разбеге
 const JUMP_UP := 4.0                 # прыжок с края
+const HATCH := Vector3(6.0, 760.2, 121.0)   # люк позади героя — через него он поднялся на крышу
+const EDGE_LOOK := Vector3(4.0, 755.0, 95.0)   # куда смотреть на край крыши (и чуть в провал)
+const DOG_TILT := deg_to_rad(20.0)   # «Настройки» — голова набок, вопросительно
+const CLOUDS_ABOVE := 830.0          # пока он на крыше — облака над ним (потолок), потом — на своё место
+const FALL_GRAVITY := 20.0           # с крыши — непрерывно, без склейки, поэтому быстрее обычного
+const FALL_CAP := 85.0
+const STEER_TO := Vector2(4.0, 86.0) # в падении его сносит к подножию — туда, где под ним машина
 
 enum State { ROOF, FALLING, CAR, BLACKOUT, STORY, LYING, HINT, GETTING_UP, DONE }
 
@@ -47,6 +54,7 @@ var state := State.FALLING
 var from_roof := false               # новая игра: начать на крыше (world.gd), иначе — сразу падение
 var step_tween: Tween                # прыжок с края: тьма — и падение
 var running := false
+var breath: AudioStreamPlayer        # на крыше, у края, — частое сбивчивое дыхание: страшно прыгать
 var jumped := false
 var t := 0.0
 var rat_mat := StandardMaterial3D.new()
@@ -106,6 +114,12 @@ func _process(delta: float) -> void:
 				_run_on_roof(delta)
 		State.FALLING:
 			var speed := -player.velocity.y
+			if from_roof:   # сносит к подножию башни — туда, где под ним пролетит машина
+				var p := player.global_position
+				var steer := (STEER_TO - Vector2(p.x, p.z)) * 0.9
+				steer = steer.limit_length(9.0)
+				player.velocity.x = steer.x
+				player.velocity.z = steer.y
 			player.fall_shake = clampf(speed / 50.0, 0.0, 1.0) * 0.5   # лёгкая дрожь; главное движение — panic
 			_panic(clampf(0.35 + speed / 55.0, 0.0, 1.0), delta)
 			wind.fill(clampf(speed / 55.0, 0.15, 1.0))
@@ -175,6 +189,57 @@ func _stand_on_roof() -> void:
 	player.target_yaw = 0.0
 	player.target_pitch = -0.05
 	player.head.rotation.x = player.target_pitch
+	_build_hatch()
+	if Game.clouds:
+		Game.clouds.position.y = CLOUDS_ABOVE
+	breath = AudioStreamPlayer.new()
+	breath.stream = _scared_breath()
+	breath.volume_db = -11.0
+	add_child(breath)
+	breath.play()
+
+
+## Люк в крыше позади: бортик, откинутая крышка, изнутри — тёплый свет лестницы.
+func _build_hatch() -> void:
+	var hatch := Node3D.new()
+	player.get_parent().add_child(hatch)
+	hatch.global_position = HATCH
+	var metal := Shapes.mat(Color(0.12, 0.12, 0.13), 0.5, 0.6)
+	for side in [-1.0, 1.0]:
+		Shapes.box(hatch, Vector3(0.12, 0.5, 1.6), Vector3(side * 0.8, 0.25, 0), metal)
+		Shapes.box(hatch, Vector3(1.6, 0.5, 0.12), Vector3(0, 0.25, side * 0.8), metal)
+	var glow := Shapes.glow(Color(0.3, 0.2, 0.1), Color(1.0, 0.7, 0.4), 1.6)
+	Shapes.box(hatch, Vector3(1.48, 0.02, 1.48), Vector3(0, 0.05, 0), glow, false)   # свет из глубины
+	var lid := Node3D.new()
+	lid.position = Vector3(0, 0.5, 0.8)
+	lid.rotation.x = 1.15   # откинута назад
+	hatch.add_child(lid)
+	Shapes.box(lid, Vector3(1.6, 0.08, 1.6), Vector3(0, 0, -0.8), metal)
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.7, 0.4)
+	light.light_energy = 1.4
+	light.omni_range = 4.0
+	light.position = Vector3(0, 0.4, 0)
+	hatch.add_child(light)
+
+
+## Главное меню: куда смотрит герой, пока мышь над пунктом. «start» — на край, с которого прыгнет;
+## «settings» — на край, голова вопросительно набок; «exit» — оборачивается на люк; «» — просто стоит.
+func menu_hover(kind: String) -> void:
+	if state != State.ROOF or running:
+		return
+	var eye := player.global_position + Vector3.UP * 1.6
+	var at := EDGE_LOOK
+	player.head_tilt = DOG_TILT if kind == "settings" else 0.0
+	match kind:
+		"exit":
+			at = HATCH + Vector3.UP * 0.3
+		"":
+			at = eye + Vector3(0, -0.8, -20.0)   # просто на город
+	var to := at - eye
+	var yaw := atan2(-to.x, -to.z)
+	player.target_yaw = player.target_yaw + angle_difference(player.target_yaw, yaw)
+	player.target_pitch = atan2(to.y, Vector2(to.x, to.z).length())
 
 
 ## «Начать игру»: разбегается к краю — шаги, камера трясётся.
@@ -182,8 +247,13 @@ func start_game() -> void:
 	if state != State.ROOF or running:
 		return
 	running = true
+	player.head_tilt = 0.0
+	player.target_yaw = player.target_yaw + angle_difference(player.target_yaw, 0.0)   # к краю
+	player.target_pitch = -0.05
 	player.scripted_run = Vector2(0, -1)
 	player.scripted_speed = RUN_SPEED
+	if breath:   # рванул — дыхание тонет в шагах и ветре
+		create_tween().tween_property(breath, "volume_db", -40.0, 1.6)
 
 
 func _run_on_roof(delta: float) -> void:
@@ -194,15 +264,17 @@ func _run_on_roof(delta: float) -> void:
 		jumped = true
 		player.velocity.y = JUMP_UP
 		create_tween().tween_property(player, "target_pitch", -0.95, 0.7).set_trans(Tween.TRANS_SINE)
-	if jumped and p.y < Structures.ROOF_SPOT.y - 6.0 and step_tween == null:
-		# Короткая тьма — и он уже летит на спине (дальше — всё как было: падение, машина…).
+	if jumped and p.y < Structures.ROOF_SPOT.y - 1.5 and step_tween == null:
+		# Сорвался с края — без склеек: тело заваливается на спину, взгляд уходит вверх, на удаляющуюся
+		# крышу; дальше — то же падение (паника, ветер, машина), просто с самой крыши.
+		state = State.FALLING
 		player.scripted_run = Vector2.ZERO
-		step_tween = create_tween()
-		step_tween.tween_property(fade, "color:a", 1.0, 0.15)
-		step_tween.tween_callback(func() -> void:
-			state = State.FALLING
-			player.fall_on_back(GROUND + Vector3.UP * FALL_FROM, 20.0))
-		step_tween.tween_property(fade, "color:a", 0.0, 0.4)
+		player.gravity = FALL_GRAVITY
+		player.fall_cap = FALL_CAP
+		step_tween = create_tween().set_parallel().set_trans(Tween.TRANS_SINE)
+		step_tween.tween_property(player, "lying", 1.0, 1.2)
+		step_tween.tween_property(player, "target_yaw", player.target_yaw + PI, 1.2)
+		step_tween.tween_property(player, "target_pitch", 0.0, 1.2)
 
 
 ## Пробил крышу машины: короткая тьма от удара — и он уже в салоне (дальше — машина, crash_car.gd).
@@ -223,8 +295,7 @@ func _into_car() -> void:
 func _impact() -> void:
 	if state != State.FALLING and state != State.CAR:
 		return
-	if Game.journey:
-		Game.journey.night = 0.0   # под тьмой: очнётся он уже в обычном городе
+	_restore_world()
 	state = State.BLACKOUT
 	player.end_fall()
 	player.global_position = GROUND
@@ -309,8 +380,7 @@ func skip() -> void:
 	if state == State.FALLING or state == State.CAR or state == State.ROOF:
 		player.flying = false
 		player.scripted_run = Vector2.ZERO
-		if Game.journey:
-			Game.journey.night = 0.0
+		_restore_world()
 		wind.stop()
 		player.end_fall()
 		player.global_position = GROUND
@@ -320,6 +390,47 @@ func skip() -> void:
 		car.wreck_now()   # машина уже лежит рядом и горит
 	fade.color.a = 0.0
 	_get_up()
+
+
+## Под тьмой после удара: утро обычного города — облака на своём месте, ночь кончилась, падение — как у всех.
+func _restore_world() -> void:
+	if Game.journey:
+		Game.journey.night = 0.0
+	if Game.clouds:
+		Game.clouds.position.y = preload("res://scripts/world.gd").CLOUDS_Y
+	if breath:
+		breath.stop()
+	player.gravity = ProjectSettings.get_setting("physics/3d/default_gravity")
+	player.fall_cap = player.MAX_FALL_SPEED
+	player.head_tilt = 0.0
+
+
+## Страх перед прыжком: частые неровные вдохи и выдохи с дрожью, петля ~5 с (несколько вдохов разной длины).
+func _scared_breath() -> AudioStreamWAV:
+	var samples := PackedFloat32Array()
+	samples.resize(int(Synth.MIX_RATE * 5.2))
+	# (начало, длина, вдох ли, громкость) — вдохи короткие и рваные, выдохи дрожат
+	var breaths := [[0.0, 0.42, true, 0.8], [0.5, 0.6, false, 0.6], [1.25, 0.35, true, 0.9], [1.65, 0.7, false, 0.55],
+		[2.5, 0.3, true, 0.7], [2.85, 0.25, true, 0.85], [3.2, 0.9, false, 0.65], [4.3, 0.45, true, 0.75], [4.8, 0.35, false, 0.5]]
+	var lp := 0.0
+	var lp2 := 0.0
+	for i in samples.size():
+		var time := i / Synth.MIX_RATE
+		var noise := randf() * 2.0 - 1.0
+		lp += (noise - lp) * 0.35
+		lp2 += (lp - lp2) * 0.08
+		var air := lp - lp2   # полоса «дыхания»: без гула и без шипения
+		var v := 0.0
+		for b in breaths:
+			var x: float = (time - float(b[0])) / float(b[1])
+			if x < 0.0 or x > 1.0:
+				continue
+			var inhale: bool = b[2]
+			var env: float = sin(PI * x) if inhale else sin(PI * pow(x, 0.6)) * (1.0 - x * 0.3)
+			var shiver: float = 1.0 if inhale else 0.75 + 0.25 * sin(TAU * 9.0 * time)   # выдох дрожит
+			v += air * env * shiver * float(b[3]) * (1.4 if inhale else 1.0)
+		samples[i] = v * 1.8
+	return Synth.wav_from(samples, true)
 
 
 ## Глухой удар: низкий гул, быстро затухающий, с хрустом шума в начале.

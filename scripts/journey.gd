@@ -133,14 +133,15 @@ func _apply(k: float) -> void:
 
 ## Ночь: тёмное небо (а с ним и туман — он берёт цвет неба), без солнца, тусклый рассеянный свет.
 func _darken(n: float) -> void:
-	sky.sky_top_color = sky.sky_top_color.lerp(Color(0.012, 0.014, 0.025), n)
-	sky.sky_horizon_color = sky.sky_horizon_color.lerp(Color(0.05, 0.05, 0.07), n)
+	sky.sky_top_color = sky.sky_top_color.lerp(Color(0.05, 0.06, 0.09), n)
+	sky.sky_horizon_color = sky.sky_horizon_color.lerp(Color(0.14, 0.15, 0.19), n)
 	sky.ground_horizon_color = sky.sky_horizon_color
-	sun.light_energy *= 1.0 - n * 0.95
-	env.ambient_light_energy = lerpf(env.ambient_light_energy, 0.25, n)
-	clouds_mat.set_shader_parameter("under_color", Color(0.28, 0.3, 0.34).lerp(Color(0.04, 0.045, 0.06), n))
-	clouds_mat.set_shader_parameter("top_color", Color(0.96, 0.94, 0.9).lerp(Color(0.07, 0.075, 0.09), n))   # море облаков под крышей — тёмное
-	env.volumetric_fog_albedo = Color(0.62, 0.63, 0.65).lerp(Color(0.08, 0.085, 0.1), n)               # дымка не светится
+	sun.light_energy *= 1.0 - n * 0.7                                       # луна за тучами — слабый холодный свет
+	sun.light_color = sun.light_color.lerp(Color(0.6, 0.7, 1.0), n)
+	env.ambient_light_energy = lerpf(env.ambient_light_energy, 0.55, n)
+	clouds_mat.set_shader_parameter("under_color", Color(0.28, 0.3, 0.34).lerp(Color(0.1, 0.11, 0.14), n))
+	clouds_mat.set_shader_parameter("top_color", Color(0.96, 0.94, 0.9).lerp(Color(0.16, 0.17, 0.21), n))   # море облаков под крышей — тёмное
+	env.volumetric_fog_albedo = Color(0.62, 0.63, 0.65).lerp(Color(0.2, 0.21, 0.25), n)                # дымка почти не светится
 
 
 ## Цвет гаммы на отрезке пути k (0 — город, 1 — над облаками), плавно между зонами.

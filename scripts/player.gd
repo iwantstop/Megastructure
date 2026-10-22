@@ -58,6 +58,9 @@ var was_on_floor := true
 var fall_speed := 0.0
 var last_safe := Vector3.ZERO
 var safe_timer := 0.0
+var fall_cap := MAX_FALL_SPEED    # во вступлении падает быстрее (intro.gd)
+var head_tilt := 0.0               # наклон головы набок (рад) — меню на крыше: «Настройки» — вопросительно, как собака
+var head_tilt_now := 0.0
 var scripted_run := Vector2.ZERO   # не ноль — бежит сам (вступление), управление при этом заблокировано
 var scripted_speed := 0.0
 var pit_time := 0.0       # сколько стоит на склоне под бездной
@@ -151,7 +154,7 @@ func _physics_process(delta: float) -> void:
 		return
 
 	if not is_on_floor():
-		velocity.y = maxf(velocity.y - gravity * delta, -MAX_FALL_SPEED)
+		velocity.y = maxf(velocity.y - gravity * delta, -fall_cap)
 		fall_speed = -velocity.y
 	elif Input.is_physical_key_pressed(KEY_SPACE) and not locked:
 		velocity.y = JUMP_VELOCITY
@@ -231,6 +234,7 @@ func _process(delta: float) -> void:
 	head.rotation.x = lerpf(head.rotation.x, target_pitch, follow)
 
 	shake_time += delta
+	head_tilt_now = lerpf(head_tilt_now, head_tilt, 1.0 - exp(-5.0 * delta))
 	var flat_speed := Vector2(velocity.x, velocity.z).length()
 	var grounded := is_on_floor() and not flying
 	var moving := clampf(flat_speed / WALK_SPEED, 0.0, 2.0) if grounded else 0.0
@@ -267,7 +271,7 @@ func _process(delta: float) -> void:
 	camera.rotation = Vector3(
 		-bounce * 0.004 * amp + breath * 0.003 + _shake(0.0) * 0.01 * shake + LIE_PITCH * lie,
 		_shake(100.0) * 0.01 * shake,
-		tilt + strafe_tilt + sway * 0.006 * amp + _shake(200.0) * 0.008 * shake + 0.25 * lie)
+		tilt + strafe_tilt + sway * 0.006 * amp + _shake(200.0) * 0.008 * shake + 0.25 * lie + head_tilt_now)
 	if panic > 0.0:
 		# Падение как в Mirror's Edge: тяжёлое тело медленно заваливается и кувыркается (низкие частоты),
 		# голова плавно поворачивается (panic_look), а поверх — мелкая дрожь от встречного ветра.

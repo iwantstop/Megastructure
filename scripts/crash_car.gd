@@ -10,12 +10,12 @@ extends Node3D
 signal crashed
 
 const Structures = preload("res://scripts/structures.gd")
-const IMPACT := Vector3(4.0, 200.0, 86.0)     # где герой пробивает крышу (он падает отвесно над HERO_SPOT)
+const IMPACT := Vector3(4.0, 300.0, 86.0)     # где герой пробивает крышу (он падает отвесно над HERO_SPOT)
 const CRASH := Vector3(7.5, 0.0, 77.5)        # где машина бьётся о землю — в 9 м от героя, в сторону горы
 const ROOF := 1.25                            # крыша над полом салона, м
 const APPROACH_SPEED := 32.0                  # с такой скоростью машина подлетает под падающего героя, м/с
 const APPROACH_FROM := Vector3(-1.0, 0.0, 0.0)  # подлетает вдоль фасада башни
-const DESCENT := 4.5                          # сколько длится падение машины, с
+const DESCENT := 5.5                          # сколько длится падение машины, с
 const SPIRAL_R := 4.0                         # её мотает по небольшому кругу (у фасада башни места ~9 м)…
 const SPIRAL_TURNS := 1.0
 const SPIN_TURNS := 4.5                       # …а сама она крутится вокруг себя, как вертолёт без хвоста
@@ -239,7 +239,7 @@ func _build_cabin() -> void:
 	var screen := Shapes.glow(Color(0.02, 0.05, 0.06), Color(0.1, 0.5, 0.6), 1.2)
 	Shapes.box(self, Vector3(0.5, 0.2, 0.02), Vector3(0.38, 0.72, -1.07), screen, false)
 	warn = _label("ВНИМАНИЕ\nПОТЕРЯ ВЫСОТЫ", Vector3(-0.32, 0.86, -1.06), Color(1.0, 0.15, 0.1))
-	altitude = _label("ВЫС 200 м", Vector3(0.38, 0.73, -1.05), Color(0.5, 0.9, 1.0))
+	altitude = _label("ВЫС 300 м", Vector3(0.38, 0.73, -1.05), Color(0.5, 0.9, 1.0))
 	Shapes.box(self, Vector3(0.05, 0.05, 0.35), Vector3(-0.45, 0.75, -0.95), trim, false)    # колонка руля
 	Shapes.box(self, Vector3(0.36, 0.05, 0.05), Vector3(-0.45, 0.8, -0.78), trim, false)     # штурвал
 	for x in [-0.45, 0.45]:

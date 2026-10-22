@@ -29,6 +29,7 @@ var lifts: Array[Node3D] = []
 var _last_mark := 0
 var _build_time := 0
 var time := 0.0
+const CLOUDS_Y := 420.0   # высота моря облаков (во вступлении — выше крыши, intro.gd)
 var from_roof := false   # новая игра: вступление начинается на крыше самой высокой башни (как после финала)
 var built := false
 var intro_node: Node
@@ -71,6 +72,7 @@ func _ready() -> void:
 		_build()
 		built = true
 		get_tree().paused = true           # вступление не начинается, пока не дочитан пролог и не нажато «Начать»
+		prologue.hovered.connect(func(kind: String) -> void: intro_node.menu_hover(kind))   # герой смотрит, куда показывает мышь
 		prologue.play_text()   # абзацы предыстории, после них — ночная крыша и главное меню
 		await prologue.finished
 		get_tree().paused = false
@@ -814,8 +816,9 @@ func _make_clouds() -> ShaderMaterial:
 	clouds.mesh = mesh
 	clouds.material_override = mat
 	clouds.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	clouds.position = Vector3(0, 420, 0)
+	clouds.position = Vector3(0, CLOUDS_Y, 0)
 	add_child(clouds)
+	Game.clouds = clouds
 	return mat
 
 

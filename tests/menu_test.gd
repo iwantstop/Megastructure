@@ -84,6 +84,25 @@ func _run() -> void:
 		if c.get_script() and str(c.get_script().resource_path).ends_with("pause_menu.gd"):
 			pause_node = c
 	_check("Esc в главном меню не открывает паузу", not pause_node.open)
+	# Мышь над пунктами — герой смотрит туда.
+	prologue.menu.get_child(2).emit_signal("mouse_entered")
+	await _wait(1.6)
+	await _shot("hover_exit")
+	var back_yaw := absf(rad_to_deg(angle_difference(hero.rotation.y, 0.0)))
+	_check("«Выход из игры» — оборачивается на люк позади", back_yaw > 150.0, "поворот %.0f°" % back_yaw)
+	prologue.menu.get_child(2).emit_signal("mouse_exited")
+	prologue.menu.get_child(1).emit_signal("mouse_entered")
+	await _wait(1.8)
+	await _shot("hover_settings")
+	_check("«Настройки» — смотрит на край, голова вопросительно набок", absf(rad_to_deg(hero.head_tilt_now) - 20.0) < 3.0
+		and absf(rad_to_deg(angle_difference(hero.rotation.y, 0.0))) < 10.0, "наклон %.0f°" % rad_to_deg(hero.head_tilt_now))
+	prologue.menu.get_child(1).emit_signal("mouse_exited")
+	prologue.menu.get_child(0).emit_signal("mouse_entered")
+	await _wait(1.2)
+	await _shot("hover_start")
+	_check("«Начать новую игру» — смотрит на край крыши, голова прямо", hero.target_pitch < -0.2 and absf(hero.head_tilt_now) < 0.05)
+	var scared: bool = intro_node.breath != null and intro_node.breath.playing
+	_check("в меню слышно дыхание — страшно прыгать", scared)
 	# Настройки
 	prologue.menu.get_child(1).emit_signal("pressed")
 	await _wait(0.5)

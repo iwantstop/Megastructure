@@ -14,6 +14,7 @@ static var world: Node3D
 static var env: Environment
 static var bodycam_mat: ShaderMaterial
 static var journey: Node
+static var clouds: Node3D          # слой облаков (во вступлении поднят выше крыши — intro.gd)
 
 
 ## Новый мир — справочник заново (прежние части, если были, уже удалены вместе со старым миром).
@@ -28,3 +29,4 @@ static func clear() -> void:
 	env = null
 	bodycam_mat = null
 	journey = null
+	clouds = null
