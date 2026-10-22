@@ -5,7 +5,7 @@ extends SceneTree
 ## Запуск: godot --path . --write-movie start.avi --fixed-fps 30 -s res://tests/start_clip.gd -- --prologue
 
 const SLIDE := 4.0        # столько каждый абзац на экране
-const AFTER_CAR := 1.2    # после удара о крышу машины — ещё столько, и стоп
+const AFTER_CAR := 3.0    # после удара о крышу машины — ещё столько (салон: дым, искры), и стоп
 
 var world: Node
 

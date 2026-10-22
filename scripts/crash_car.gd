@@ -39,6 +39,7 @@ var flames: GPUParticles3D
 var smoke: GPUParticles3D
 var crackle: AudioStreamPlayer3D
 var clock := 0.0
+var cabin_fx: Array = []                      # дым и искры в салоне — пока машина падает
 var lights: Array[StandardMaterial3D] = []    # фары, огни, подсветка — после удара гаснут
 var flame_pm: ParticleProcessMaterial         # пламя: общее для остова и горящих обломков
 var flame_quad: QuadMesh
@@ -83,6 +84,7 @@ func begin() -> void:
 	kick = 1.0
 	cam.make_current()
 	alarm.play()
+	_cabin_smoke_and_sparks()
 	Synth.play_once(self, _crunch_sound(), 6.0)
 	_place(0.0)
 
@@ -140,6 +142,82 @@ func _cabin_fx(delta: float) -> void:
 		randf_range(-1, 1) * shake * 1.5)
 
 
+## В салоне: дым валит из-под приборной панели и тянется к дыре в крыше; из панели и проводки сыплются искры.
+func _cabin_smoke_and_sparks() -> void:
+	var soot := StandardMaterial3D.new()
+	soot.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	soot.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	soot.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	soot.vertex_color_use_as_albedo = true
+	soot.albedo_texture = Shapes.soft_dot()
+	var grey := Gradient.new()
+	grey.set_color(0, Color(0.25, 0.24, 0.24, 0.0))
+	grey.add_point(0.15, Color(0.22, 0.21, 0.21, 0.45))
+	grey.set_color(grey.get_point_count() - 1, Color(0.3, 0.3, 0.3, 0.0))
+	var grey_tex := GradientTexture1D.new()
+	grey_tex.gradient = grey
+	var sm := ParticleProcessMaterial.new()
+	sm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	sm.emission_box_extents = Vector3(0.7, 0.1, 0.2)
+	sm.direction = Vector3(0, 1, 0.8)          # вверх и назад — к дыре над задним сиденьем
+	sm.spread = 25.0
+	sm.initial_velocity_min = 0.4
+	sm.initial_velocity_max = 0.9
+	sm.gravity = Vector3(0, 0.6, 0.4)
+	sm.turbulence_enabled = true
+	sm.turbulence_noise_strength = 1.5
+	sm.scale_min = 0.6
+	sm.scale_max = 1.2
+	sm.color_ramp = grey_tex
+	var puff := QuadMesh.new()
+	puff.size = Vector2(0.9, 0.9)
+	puff.material = soot
+	var smoke_in := GPUParticles3D.new()
+	smoke_in.local_coords = true    # дым крутится вместе с машиной
+	smoke_in.process_material = sm
+	smoke_in.draw_pass_1 = puff
+	smoke_in.amount = 60
+	smoke_in.lifetime = 2.5
+	smoke_in.preprocess = 1.0
+	smoke_in.position = Vector3(0, 0.55, -1.05)
+	smoke_in.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(smoke_in)
+
+	var hot := StandardMaterial3D.new()
+	hot.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	hot.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	hot.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	hot.vertex_color_use_as_albedo = true
+	var spark_ramp := Gradient.new()
+	spark_ramp.set_color(0, Color(1.0, 0.95, 0.7, 1.0))
+	spark_ramp.set_color(1, Color(1.0, 0.35, 0.05, 0.0))
+	var spark_tex := GradientTexture1D.new()
+	spark_tex.gradient = spark_ramp
+	var sp := ParticleProcessMaterial.new()
+	sp.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	sp.emission_box_extents = Vector3(0.6, 0.05, 0.05)
+	sp.direction = Vector3(0, 0.6, 1)          # из панели — в салон
+	sp.spread = 50.0
+	sp.initial_velocity_min = 1.5
+	sp.initial_velocity_max = 3.5
+	sp.gravity = Vector3(0, -6.0, 0)
+	sp.color_ramp = spark_tex
+	var dot := QuadMesh.new()
+	dot.size = Vector2(0.025, 0.025)
+	dot.material = hot
+	var sparks := GPUParticles3D.new()
+	sparks.local_coords = true
+	sparks.process_material = sp
+	sparks.draw_pass_1 = dot
+	sparks.amount = 40
+	sparks.lifetime = 0.7
+	sparks.explosiveness = 0.85               # пачками — коротит
+	sparks.position = Vector3(0, 0.76, -1.08)
+	sparks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(sparks)
+	cabin_fx = [smoke_in, sparks]
+
+
 ## Удар о землю: камера — снова героя (intro дальше показывает тьму), машина ложится набок и горит.
 func _crash() -> void:
 	alarm.stop()
@@ -175,6 +253,9 @@ func wreck_now() -> void:
 		m.emission_energy_multiplier = 0.0
 	warn.visible = false
 	altitude.visible = false
+	for fx in cabin_fx:
+		fx.queue_free()
+	cabin_fx.clear()
 	_build_fire()
 	_build_debris(ground)
 

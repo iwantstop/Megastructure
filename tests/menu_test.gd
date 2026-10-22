@@ -84,9 +84,16 @@ func _run() -> void:
 		if c.get_script() and str(c.get_script().resource_path).ends_with("pause_menu.gd"):
 			pause_node = c
 	_check("Esc в главном меню не открывает паузу", not pause_node.open)
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	click.position = Vector2(1500, 300)   # мимо кнопок
+	Input.parse_input_event(click)
+	await _wait(0.3)
+	_check("клик мимо кнопок меню не включает обзор мышью", Input.mouse_mode == Input.MOUSE_MODE_VISIBLE)
 	# Мышь над пунктами — герой смотрит туда.
 	prologue.menu.get_child(2).emit_signal("mouse_entered")
-	await _wait(1.6)
+	await _wait(2.6)   # в меню голова поворачивается неспешно
 	await _shot("hover_exit")
 	var back_yaw := absf(rad_to_deg(angle_difference(hero.rotation.y, 0.0)))
 	_check("«Выход из игры» — оборачивается на люк позади", back_yaw > 150.0, "поворот %.0f°" % back_yaw)
@@ -100,7 +107,11 @@ func _run() -> void:
 	prologue.menu.get_child(0).emit_signal("mouse_entered")
 	await _wait(1.2)
 	await _shot("hover_start")
-	_check("«Начать новую игру» — смотрит на край крыши, голова прямо", hero.target_pitch < -0.2 and absf(hero.head_tilt_now) < 0.05)
+	var idle_pitch: float = hero.target_pitch
+	prologue.menu.get_child(0).emit_signal("mouse_exited")
+	await process_frame
+	_check("«Начать новую игру» — смотрит туда же, куда без наведения (на город), голова прямо",
+		absf(hero.target_pitch - idle_pitch) < 0.01 and absf(hero.head_tilt_now) < 0.05 and absf(angle_difference(hero.target_yaw, 0.0)) < 0.05)
 	var scared: bool = intro_node.breath != null and intro_node.breath.playing
 	_check("в меню слышно дыхание — страшно прыгать", scared)
 	# Настройки
@@ -125,6 +136,7 @@ func _run() -> void:
 		"%d сигарет" % Game.smoke.left_in_pack)
 	await _wait(1.0)
 	_check("«Начать игру» — кнопки исчезли, герой разбегается", prologue == null or not is_instance_valid(prologue) or prologue.menu.modulate.a < 0.05)
+	_check("пока бежит — мышь голову не поворачивает", hero.look_locked)
 	_check("…бежит к краю, камера трясётся", intro_node.running and Vector2(hero.velocity.x, hero.velocity.z).length() > 6.0 and hero.fall_shake > 0.2,
 		"%.1f м/с" % Vector2(hero.velocity.x, hero.velocity.z).length())
 	await _shot("run")

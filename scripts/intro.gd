@@ -35,7 +35,8 @@ const HATCH := Vector3(6.0, 760.2, 121.0)   # люк позади героя —
 const EDGE_LOOK := Vector3(4.0, 755.0, 95.0)   # куда смотреть на край крыши (и чуть в провал)
 const SIGN_SIZE := Vector2(30.0, 12.0)       # «НАСЛАЖДАЙСЯ» — билборд на фасаде, под краем крыши (между карнизами
 const SIGN_AT := Vector3(4.0, 730.0, 93.6)    # 710 и 750 м), прямо над тем, кто падает
-const DOG_TILT := deg_to_rad(20.0)   # «Настройки» — голова набок, вопросительно
+const DOG_TILT := deg_to_rad(20.0)
+const STARS_R := 5000.0              # звёзды — на сфере этого радиуса вокруг крыши   # «Настройки» — голова набок, вопросительно
 const CLOUDS_ABOVE := 830.0          # пока он на крыше — облака над ним (потолок), потом — на своё место
 const FALL_GRAVITY := 20.0           # с крыши — непрерывно, без склейки, поэтому быстрее обычного
 const FALL_CAP := 85.0
@@ -58,6 +59,10 @@ var state := State.FALLING
 var from_roof := false               # новая игра: начать на крыше (world.gd), иначе — сразу падение
 var step_tween: Tween                # прыжок с края: тьма — и падение
 var running := false
+var stars: MultiMeshInstance3D       # звёзды ночного неба во вступлении
+var fall_fx := 0.0                   # 0..1 — помехи, тёмные края и приближение в падении с крыши
+var glitch_jerk := 0.0
+var vignette_base := -1.0
 var rain: AudioStreamPlayer          # в меню: тихий шелест дождя и капли по крыше
 var breath: AudioStreamPlayer        # на крыше, у края, — частое сбивчивое дыхание: страшно прыгать
 var jumped := false
@@ -123,6 +128,7 @@ func _process(delta: float) -> void:
 				var p := player.global_position
 				var thick := clampf(inverse_lerp(FOG_CLEARS.y, FOG_CLEARS.x, p.y), 0.0, 1.0)
 				_jump_fog(JUMP_FOG * smoothstep(0.0, 1.0, thick), delta)
+				_fall_fx(delta)
 				var steer := (STEER_TO - Vector2(p.x, p.z)) * 0.9
 				steer = steer.limit_length(9.0)
 				player.velocity.x = steer.x
@@ -198,14 +204,18 @@ func _stand_on_roof() -> void:
 	player.target_yaw = 0.0
 	player.target_pitch = -0.05
 	player.head.rotation.x = player.target_pitch
+	player.look_smoothing_scale = 0.6   # в меню голова поворачивается плавнее
 	_build_hatch()
+	_build_railing()
+	_build_puddles()
+	_build_stars()
 	_build_wet_roof()
 	_build_enjoy_sign()
 	if Game.clouds:
 		Game.clouds.position.y = CLOUDS_ABOVE
 	breath = AudioStreamPlayer.new()
 	breath.stream = _scared_breath()
-	breath.volume_db = -16.0
+	breath.volume_db = -14.0
 	rain = AudioStreamPlayer.new()
 	rain.stream = _rain_on_roof()
 	rain.volume_db = -14.0
@@ -214,6 +224,116 @@ func _stand_on_roof() -> void:
 	rain.play()
 	add_child(breath)
 	breath.play()
+
+
+## Перила по краю крыши. Там, где он побежит (x≈4), они проломлены: стойка завалена наружу, концы поручней
+## загнуты в пропасть, кусок поручня валяется на крыше. Только вид — без коллизии.
+func _build_railing() -> void:
+	var rail := Node3D.new()
+	player.get_parent().add_child(rail)
+	rail.global_position = Vector3(Structures.TALLEST_TOWER.x, Structures.TALLEST_HEIGHT, Structures.TALLEST_TOWER.z)
+	var metal := Shapes.mat(Color(0.14, 0.14, 0.15), 0.35, 0.8)
+	var half := 22.6
+	var front := ROOF_EDGE_Z - Structures.TALLEST_TOWER.z   # передний край (к городу), в координатах rail
+	# Стороны: [от, до] по краю; на переднем — два куска с проломом посередине.
+	var gap := Vector2(1.6 - Structures.TALLEST_TOWER.x, 6.6 - Structures.TALLEST_TOWER.x)
+	var runs := [
+		[Vector3(-half, 0, front), Vector3(gap.x, 0, front)], [Vector3(gap.y, 0, front), Vector3(half, 0, front)],
+		[Vector3(-half, 0, -front), Vector3(half, 0, -front)],
+		[Vector3(-half, 0, front), Vector3(-half, 0, -front)], [Vector3(half, 0, front), Vector3(half, 0, -front)],
+	]
+	for r in runs:
+		var a: Vector3 = r[0]
+		var b: Vector3 = r[1]
+		var length := a.distance_to(b)
+		var along := (b - a) / length
+		var posts := maxi(int(length / 2.3), 1)
+		for k in posts + 1:
+			Shapes.box(rail, Vector3(0.07, 1.1, 0.07), a + along * (length * k / posts) + Vector3.UP * 0.55, metal)
+		for h in [0.55, 1.07]:
+			var bar := Shapes.box(rail, Vector3(0.05, 0.05, length) if absf(along.x) < 0.5 else Vector3(length, 0.05, 0.05),
+				(a + b) / 2.0 + Vector3.UP * h, metal)
+	# Пролом: загнутые наружу обрывки поручней, заваленная стойка, кусок на крыше.
+	for side in [gap.x, gap.y]:
+		var dir := 1.0 if side == gap.x else -1.0
+		for h in [0.55, 1.07]:
+			var stub := Shapes.box(rail, Vector3(1.3, 0.05, 0.05), Vector3(side + dir * 0.55, h, front - 0.35), metal)
+			stub.rotation = Vector3(0, dir * 0.6, -dir * 0.25)
+	var bent := Shapes.box(rail, Vector3(0.07, 1.1, 0.07), Vector3(gap.x + 1.4, 0.4, front - 0.5), metal)
+	bent.rotation = Vector3(-1.0, 0, 0.2)   # стойка завалилась в пропасть
+	var piece := Shapes.box(rail, Vector3(2.2, 0.05, 0.05), Vector3(gap.y - 1.2, 0.03, front + 1.8), metal)
+	piece.rotation.y = 0.5
+
+
+## Лужи и ручьи: тёмная вода-зеркало пятнами по крыше и тонкие струйки к краю.
+func _build_puddles() -> void:
+	var water := StandardMaterial3D.new()
+	water.albedo_color = Color(0.02, 0.022, 0.028)
+	water.roughness = 0.03
+	water.metallic = 0.15
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var roof := Node3D.new()
+	player.get_parent().add_child(roof)
+	roof.global_position = Vector3(Structures.TALLEST_TOWER.x, Structures.TALLEST_HEIGHT + 0.025, Structures.TALLEST_TOWER.z)
+	var disc := CylinderMesh.new()
+	disc.top_radius = 1.0
+	disc.bottom_radius = 1.0
+	disc.height = 0.01
+	disc.radial_segments = 24
+	disc.rings = 1
+	for i in 34:
+		var at := Vector3(rng.randf_range(-21, 21), 0, rng.randf_range(-21, 21))
+		if at.distance_to(HATCH - roof.global_position) < 2.0:
+			continue
+		# Лужа — несколько пересекающихся овалов: край неровный.
+		for k in rng.randi_range(2, 4):
+			var blob := Shapes.node(roof, disc, at + Vector3(rng.randf_range(-0.8, 0.8), 0.001 * k, rng.randf_range(-0.8, 0.8)), water, false,
+				Vector3(rng.randf_range(0.5, 2.4), 1.0, rng.randf_range(0.4, 1.6)))
+			blob.rotation.y = rng.randf() * TAU
+	for i in 9:   # ручьи — тонкие струйки по уклону к краю
+		var from := Vector3(rng.randf_range(-18, 18), 0.002, rng.randf_range(-15, 12))
+		var to := Vector3(from.x + rng.randf_range(-3, 3), 0.002, -22.0)
+		var mid := (from + to) / 2.0 + Vector3(rng.randf_range(-1.5, 1.5), 0, 0)
+		for seg in [[from, mid], [mid, to]]:
+			var a: Vector3 = seg[0]
+			var b: Vector3 = seg[1]
+			var strip := Shapes.box(roof, Vector3(rng.randf_range(0.1, 0.22), 0.006, a.distance_to(b)), (a + b) / 2.0, water, false)
+			strip.rotation.y = atan2(b.x - a.x, b.z - a.z)
+
+
+## Звёзды: россыпь неярких точек по небу (в просветах ночных туч), туман их не гасит.
+func _build_stars() -> void:
+	var star := StandardMaterial3D.new()   # точка-шарик: ровный свет, туман не гасит
+	star.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	star.disable_fog = true
+	star.vertex_color_use_as_albedo = true
+	var quad := SphereMesh.new()
+	quad.radius = 0.5
+	quad.height = 1.0
+	quad.radial_segments = 6
+	quad.rings = 3
+	quad.material = star
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = quad
+	mm.instance_count = 1000
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var centre := Structures.ROOF_SPOT
+	for i in mm.instance_count:
+		var yaw := rng.randf() * TAU
+		var up := asin(rng.randf_range(0.08, 1.0))   # над горизонтом, гуще у зенита не надо — равномерно по небу
+		var dir := Vector3(cos(up) * sin(yaw), sin(up), cos(up) * cos(yaw))
+		var size := rng.randf_range(8.0, 15.0) * (1.7 if rng.randf() < 0.05 else 1.0)
+		mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ONE * size), centre + dir * STARS_R))
+		var b := rng.randf_range(0.35, 0.8)
+		mm.set_instance_color(i, Color(0.85 * b, 0.9 * b, 1.0 * b, 1.0))
+	stars = MultiMeshInstance3D.new()
+	stars.multimesh = mm
+	stars.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	player.get_parent().add_child(stars)
 
 
 ## Мокрая крыша: тёмная глянцевая плёнка воды по всей крыше, с лужами (там глаже — отражения, SSR).
@@ -257,11 +377,12 @@ func _rain_on_roof() -> AudioStreamWAV:
 		lp += (n - lp) * 0.5
 		hp += (lp - hp) * 0.05
 		var hiss := (lp - hp) * 0.35   # шелест: без гула и без резкого шипения
-		if randf() < 0.0006:   # капля
-			drop = randf_range(0.3, 0.8)
-			drop_f = randf_range(900.0, 2600.0)
+		if randf() < 0.0005:   # капля: мягкий «плюх» — низко, с коротким подъёмом тона, как капля в лужу
+			drop = randf_range(0.2, 0.5)
+			drop_f = randf_range(280.0, 650.0)
 		phase += TAU * drop_f / Synth.MIX_RATE
-		drop *= 0.9965
+		drop_f *= 1.00004   # тон чуть растёт — пузырёк
+		drop *= 0.9975
 		samples[i] = hiss + sin(phase) * drop * 0.5
 	return Synth.wav_from(samples, true)
 
@@ -324,13 +445,13 @@ func menu_hover(kind: String) -> void:
 	if state != State.ROOF or running:
 		return
 	var eye := player.global_position + Vector3.UP * 1.6
-	var at := EDGE_LOOK
+	var at := eye + Vector3(0, -0.8, -20.0)   # «Начать новую игру» и без наведения — просто на город, с края
 	player.head_tilt = DOG_TILT if kind == "settings" else 0.0
 	match kind:
 		"exit":
 			at = HATCH + Vector3.UP * 0.3
-		"":
-			at = eye + Vector3(0, -0.8, -20.0)   # просто на город
+		"settings":
+			at = EDGE_LOOK
 	var to := at - eye
 	var yaw := atan2(-to.x, -to.z)
 	player.target_yaw = player.target_yaw + angle_difference(player.target_yaw, yaw)
@@ -342,6 +463,8 @@ func start_game() -> void:
 	if state != State.ROOF or running:
 		return
 	running = true
+	player.look_locked = true          # пока бежит и прыгает — мышь не крутит голову
+	player.look_smoothing_scale = 1.0
 	player.head_tilt = 0.0
 	player.target_yaw = player.target_yaw + angle_difference(player.target_yaw, 0.0)   # к краю
 	player.target_pitch = -0.05
@@ -366,6 +489,7 @@ func _run_on_roof(delta: float) -> void:
 		# крышу; дальше — то же падение (паника, ветер, машина), просто с самой крыши.
 		state = State.FALLING
 		player.scripted_run = Vector2.ZERO
+		player.look_locked = false
 		player.gravity = FALL_GRAVITY
 		player.fall_cap = FALL_CAP
 		step_tween = create_tween().set_parallel().set_trans(Tween.TRANS_SINE)
@@ -378,6 +502,7 @@ func _run_on_roof(delta: float) -> void:
 ## Сам герой ждёт на земле, у подножия башни: там он очнётся.
 func _into_car() -> void:
 	state = State.CAR
+	_end_fall_fx()
 	player.end_fall()
 	player.global_position = GROUND
 	player.velocity = Vector3.ZERO
@@ -489,6 +614,32 @@ func skip() -> void:
 	_get_up()
 
 
+## Падение с крыши: кадр мелко рвётся помехами (иногда — срыв сильнее), края темнеют, обзор чуть уже.
+func _fall_fx(delta: float) -> void:
+	fall_fx = minf(fall_fx + delta / 1.5, 1.0)
+	var mat := Game.bodycam_mat
+	if mat == null:
+		return
+	glitch_jerk -= delta
+	if glitch_jerk <= 0.0:
+		glitch_jerk = randf_range(0.05, 0.12)
+		var burst := randf() < 0.12   # изредка — срыв посильнее
+		mat.set_shader_parameter("glitch", (randf_range(0.25, 0.5) if burst else randf_range(0.03, 0.1)) * fall_fx)
+		mat.set_shader_parameter("glitch_seed", randf() * 100.0)
+	if vignette_base < 0.0:
+		vignette_base = mat.get_shader_parameter("vignette")
+	mat.set_shader_parameter("vignette", lerpf(vignette_base, vignette_base * 2.6 + 0.4, fall_fx))
+	player.fov_zoom = 9.0 * fall_fx
+
+
+func _end_fall_fx() -> void:
+	if fall_fx > 0.0 and Game.bodycam_mat:   # помехи, тёмные края и приближение — прочь
+		Game.bodycam_mat.set_shader_parameter("glitch", 0.0)
+		Game.bodycam_mat.set_shader_parameter("vignette", vignette_base)
+	fall_fx = 0.0
+	player.fov_zoom = 0.0
+
+
 ## Туман прыжка: плавно к нужной густоте (journey.fog_boost — им же сгущается туман на скамейке).
 func _jump_fog(target: float, delta: float) -> void:
 	if Game.journey:
@@ -497,6 +648,12 @@ func _jump_fog(target: float, delta: float) -> void:
 
 ## Под тьмой после удара: утро обычного города — облака на своём месте, ночь кончилась, падение — как у всех.
 func _restore_world() -> void:
+	_end_fall_fx()
+	if stars:
+		stars.queue_free()   # ночь кончилась
+		stars = null
+	player.look_locked = false
+	player.look_smoothing_scale = 1.0
 	if Game.journey:
 		Game.journey.night = 0.0
 		Game.journey.fog_boost = 0.0
@@ -517,24 +674,30 @@ func _scared_breath() -> AudioStreamWAV:
 	# (начало, длина, вдох ли, громкость) — вдохи короткие и рваные, выдохи дрожат
 	var breaths := [[0.0, 0.42, true, 0.8], [0.5, 0.6, false, 0.6], [1.25, 0.35, true, 0.9], [1.65, 0.7, false, 0.55],
 		[2.5, 0.3, true, 0.7], [2.85, 0.25, true, 0.85], [3.2, 0.9, false, 0.65], [4.3, 0.45, true, 0.75], [4.8, 0.35, false, 0.5]]
-	var lp := 0.0
-	var lp2 := 0.0
+	# Дыхание — не шум, а воздух через рот: узкая резонансная полоса (вдох выше, ~1,3 кГц; выдох ниже, ~0,8 кГц),
+	# мягкие края, без низа и без резкого верха.
+	var low := 0.0
+	var band := 0.0
 	for i in samples.size():
 		var time := i / Synth.MIX_RATE
-		var noise := randf() * 2.0 - 1.0
-		lp += (noise - lp) * 0.35
-		lp2 += (lp - lp2) * 0.08
-		var air := lp - lp2   # полоса «дыхания»: без гула и без шипения
 		var v := 0.0
+		var centre := 0.0
 		for b in breaths:
 			var x: float = (time - float(b[0])) / float(b[1])
 			if x < 0.0 or x > 1.0:
 				continue
 			var inhale: bool = b[2]
-			var env: float = sin(PI * x) if inhale else sin(PI * pow(x, 0.6)) * (1.0 - x * 0.3)
-			var shiver: float = 1.0 if inhale else 0.75 + 0.25 * sin(TAU * 9.0 * time)   # выдох дрожит
-			v += air * env * shiver * float(b[3]) * (1.4 if inhale else 1.0)
-		samples[i] = v * 1.8
+			var env: float = pow(sin(PI * x), 2.0) if inhale else pow(sin(PI * pow(x, 0.6)), 1.5) * (1.0 - x * 0.3)
+			var shiver: float = 1.0 if inhale else 0.8 + 0.2 * sin(TAU * 9.0 * time)   # выдох дрожит
+			v += env * shiver * float(b[3])
+			centre = 1300.0 if inhale else 800.0
+		if centre == 0.0:
+			centre = 1000.0
+		var f := 2.0 * sin(PI * centre / Synth.MIX_RATE)
+		var high := (randf() * 2.0 - 1.0) - low - 0.55 * band
+		band += f * high
+		low += f * band
+		samples[i] = band * v * 0.55
 	return Synth.wav_from(samples, true)
 
 

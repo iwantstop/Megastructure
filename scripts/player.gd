@@ -61,6 +61,9 @@ var safe_timer := 0.0
 var fall_cap := MAX_FALL_SPEED    # во вступлении падает быстрее (intro.gd)
 var head_tilt := 0.0               # наклон головы набок (рад) — меню на крыше: «Настройки» — вопросительно, как собака
 var head_tilt_now := 0.0
+var look_smoothing_scale := 1.0   # меньше единицы — голова поворачивается плавнее (главное меню на крыше)
+var look_locked := false           # мышь не поворачивает голову (разбег во вступлении)
+var fov_zoom := 0.0                # на столько градусов уже обзор — «приближение» (падение во вступлении)
 var scripted_run := Vector2.ZERO   # не ноль — бежит сам (вступление), управление при этом заблокировано
 var scripted_speed := 0.0
 var pit_time := 0.0       # сколько стоит на склоне под бездной
@@ -126,13 +129,13 @@ func set_noclip(on: bool) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Esc — пауза (pause_menu.gd): там же мышь отпускается.
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not look_locked:
 		var sensitivity := MOUSE_SENSITIVITY * mouse_scale
 		target_yaw -= event.relative.x * sensitivity
 		var dy: float = -event.relative.y if invert_y else event.relative.y
 		target_pitch = clampf(target_pitch - dy * sensitivity, deg_to_rad(-89), deg_to_rad(89))
-	elif event is InputEventMouseButton and event.pressed:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	elif event is InputEventMouseButton and event.pressed and get_tree().get_first_node_in_group("main_menu") == null:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED   # (в главном меню клик мимо кнопок мышь не захватывает)
 
 
 func _physics_process(delta: float) -> void:
@@ -228,7 +231,7 @@ func _fly(input: Vector2, delta: float) -> void:
 
 func _process(delta: float) -> void:
 	# Плавно догоняем поворот мыши.
-	var follow := 1.0 - exp(-LOOK_SMOOTHING * delta)
+	var follow := 1.0 - exp(-LOOK_SMOOTHING * look_smoothing_scale * delta)
 	var yaw_gap := angle_difference(rotation.y, target_yaw)
 	rotation.y += yaw_gap * follow
 	head.rotation.x = lerpf(head.rotation.x, target_pitch, follow)
@@ -281,7 +284,7 @@ func _process(delta: float) -> void:
 			panic_look.y + _tumble(300.0) * 0.16 * panic + _chaos(320.0) * 0.14 * panic + _buffet(310.0) * 0.006 * panic,
 			panic_look.x + _tumble(400.0) * 0.14 * panic + _chaos(420.0) * 0.18 * panic + _buffet(410.0) * 0.006 * panic,
 			_tumble(500.0) * 0.55 * panic + _chaos(520.0) * 0.4 * panic + _buffet(510.0) * 0.004 * panic)
-	camera.fov = FOV + PANIC_FOV * panic
+	camera.fov = FOV + PANIC_FOV * panic - fov_zoom
 
 
 ## Медленное заваливание тела в падении: плавно, около одного «качка» за 2–3 секунды.

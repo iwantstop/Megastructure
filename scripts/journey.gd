@@ -142,7 +142,8 @@ func _darken(n: float) -> void:
 	sun.light_color = sun.light_color.lerp(Color(0.6, 0.7, 1.0), n)
 	env.ambient_light_energy = lerpf(env.ambient_light_energy, 0.55, n)
 	clouds_mat.set_shader_parameter("under_color", Color(0.28, 0.3, 0.34).lerp(Color(0.1, 0.11, 0.14), n))
-	clouds_mat.set_shader_parameter("top_color", Color(0.96, 0.94, 0.9).lerp(Color(0.16, 0.17, 0.21), n))   # море облаков под крышей — тёмное
+	clouds_mat.set_shader_parameter("top_color", Color(0.96, 0.94, 0.9).lerp(Color(0.16, 0.17, 0.21), n))
+	clouds_mat.set_shader_parameter("coverage", lerpf(0.82, 0.25, n))   # ночью тучи рваные — в просветах звёзды   # море облаков под крышей — тёмное
 	env.volumetric_fog_albedo = Color(0.62, 0.63, 0.65).lerp(Color(0.2, 0.21, 0.25), n)                # дымка почти не светится
 	# Густой туман прыжка (intro.gd) светится сам — холодная мгла в отсветах города, а не чёрная пустота.
 	var jump_fog := clampf(fog_boost / 2.5, 0.0, 1.0) * n
