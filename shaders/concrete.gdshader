@@ -61,6 +61,27 @@ float ripples(vec2 p) {
 	return h;
 }
 
+// Следы капель на сухом бетоне: в каждой клетке время от времени падает капля — тёмная клякса сразу,
+// потом подсыхает и тает. Возвращает 0..1 — насколько темнеет точка.
+float drop_marks(vec2 p) {
+	vec2 cell = floor(p);
+	vec2 f = fract(p);
+	float m = 0.0;
+	for (int j = -1; j <= 1; j++) {
+		for (int i = -1; i <= 1; i++) {
+			vec2 o = vec2(float(i), float(j));
+			vec2 rnd = hash2(cell + o + 17.0);
+			float period = 2.2 + rnd.y * 2.5;                   // капля в эту клетку — раз в 2–5 с
+			float t = fract(TIME / period + rnd.x) * period;    // секунд с момента падения
+			float life = 1.0 - smoothstep(0.0, 1.6, t);         // подсыхает за ~1,6 с
+			float d = length(o + rnd * 0.8 + 0.1 - f);
+			float size = 0.07 + rnd.y * 0.08;
+			m = max(m, smoothstep(size, size * 0.4, d) * life);
+		}
+	}
+	return m;
+}
+
 void fragment() {
 	vec3 n = normalize(wnrm);
 	vec3 w = pow(abs(n), vec3(4.0));
@@ -132,6 +153,12 @@ void fragment() {
 		float h0 = ripples(q);
 		drip = vec3(-(ripples(q + vec2(0.02, 0.0)) - h0), 0.0, -(ripples(q + vec2(0.0, 0.02)) - h0)) / 0.02 * 0.012 * rain_here;
 		ring_glow = max(h0, 0.0) * rain_here;   // гребни кругов ловят отсвет неба и огней
+	}
+
+	// Сухие места темнеют пятнами от капель (в лужах вместо них — круги).
+	float marks_here = rain_amount * (1.0 - wet) * step(0.9, n.y) * (1.0 - smoothstep(10.0, 25.0, length(VERTEX)));
+	if (marks_here > 0.01) {
+		col *= 1.0 - drop_marks(wpos.xz * 3.0) * 0.35 * marks_here;
 	}
 
 	ALBEDO = col;
