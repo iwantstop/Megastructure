@@ -61,7 +61,6 @@ var from_roof := false               # новая игра: начать на к
 var step_tween: Tween                # прыжок с края: тьма — и падение
 var running := false
 var beacon: OmniLight3D              # красный луч со шпиля на крышу — только ночью, во вступлении
-var puddle_mat: StandardMaterial3D   # лужи: рябь бежит (капли)
 var stars: MultiMeshInstance3D       # звёзды ночного неба во вступлении
 var fall_fx := 0.0                   # 0..1 — помехи, тёмные края и приближение в падении с крыши
 var glitch_jerk := 0.0
@@ -123,8 +122,6 @@ func _process(delta: float) -> void:
 	t += delta
 	match state:
 		State.ROOF:
-			if puddle_mat:
-				puddle_mat.uv1_offset += Vector3(0.013, 0.0, 0.021) * delta   # рябь от капель
 			if running:
 				_run_on_roof(delta)
 		State.FALLING:
@@ -270,67 +267,34 @@ func _build_railing() -> void:
 	piece.rotation.y = 0.5
 
 
-## Лужи и ручьи: тёмная вода-зеркало пятнами по крыше и тонкие струйки к краю.
+## Лужи: шейдер на всю крышу (shaders/puddles.gdshader) — рваные края из шума, мокрый ореол, вода-зеркало с
+## кругами от капель.
 func _build_puddles() -> void:
-	var water := StandardMaterial3D.new()
-	# Вода — в тон мокрому бетону, с широким бликом: ловит красный огонь со шпиля и отсвет неба, а не
-	# зеркалит чёрное небо (тогда лужи выглядят дырами).
-	# Лужа — плёнка в пару сантиметров над бетоном: тени крыши её «накрывают» (она тоньше запаса теней), поэтому
-	# тени она не принимает. Вода живая: рябь от капель (карта нормалей бежит), блеск пятнами (шероховатость
-	# по шуму), край темнее середины — мокрый бетон под тонким слоем воды.
-	var ripple_noise := FastNoiseLite.new()
-	ripple_noise.frequency = 0.08
-	var ripples := NoiseTexture2D.new()
-	ripples.noise = ripple_noise
-	ripples.as_normal_map = true
-	ripples.bump_strength = 8.0
-	ripples.seamless = true
-	var gloss_noise := FastNoiseLite.new()
-	gloss_noise.frequency = 0.03
-	var gloss := NoiseTexture2D.new()
-	gloss.noise = gloss_noise
-	gloss.seamless = true
-	water.albedo_color = Color(0.36, 0.37, 0.41)   # мокрый бетон чуть темнее сухого (а не в разы: ночью это чёрная дыра)
-	water.roughness = 0.12
-	water.roughness_texture = gloss
-	water.metallic = 0.0
-	water.metallic_specular = 0.5
-	water.normal_enabled = true
-	water.normal_texture = ripples
-	water.normal_scale = 1.2
-	water.uv1_triplanar = true
-	water.uv1_scale = Vector3(0.6, 0.6, 0.6)
-	water.disable_receive_shadows = true
-	puddle_mat = water
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 11
-	var roof := Node3D.new()
-	player.get_parent().add_child(roof)
-	roof.global_position = Vector3(Structures.TALLEST_TOWER.x, Structures.TALLEST_HEIGHT + 0.025, Structures.TALLEST_TOWER.z)
-	var disc := CylinderMesh.new()
-	disc.top_radius = 1.0
-	disc.bottom_radius = 1.0
-	disc.height = 0.01
-	disc.radial_segments = 24
-	disc.rings = 1
-	for i in 34:
-		var at := Vector3(rng.randf_range(-21, 21), 0, rng.randf_range(-21, 21))
-		if at.distance_to(HATCH - roof.global_position) < 2.0:
-			continue
-		# Лужа — несколько пересекающихся овалов: край неровный.
-		for k in rng.randi_range(2, 4):
-			var blob := Shapes.node(roof, disc, at + Vector3(rng.randf_range(-0.8, 0.8), 0.001 * k, rng.randf_range(-0.8, 0.8)), water, false,
-				Vector3(rng.randf_range(0.5, 2.4), 1.0, rng.randf_range(0.4, 1.6)))
-			blob.rotation.y = rng.randf() * TAU
-	for i in 9:   # ручьи — тонкие струйки по уклону к краю
-		var from := Vector3(rng.randf_range(-18, 18), 0.002, rng.randf_range(-15, 12))
-		var to := Vector3(from.x + rng.randf_range(-3, 3), 0.002, -22.0)
-		var mid := (from + to) / 2.0 + Vector3(rng.randf_range(-1.5, 1.5), 0, 0)
-		for seg in [[from, mid], [mid, to]]:
-			var a: Vector3 = seg[0]
-			var b: Vector3 = seg[1]
-			var strip := Shapes.box(roof, Vector3(rng.randf_range(0.1, 0.22), 0.006, a.distance_to(b)), (a + b) / 2.0, water, false)
-			strip.rotation.y = atan2(b.x - a.x, b.z - a.z)
+	var shape := NoiseTexture2D.new()
+	var shape_noise := FastNoiseLite.new()
+	shape_noise.frequency = 0.02
+	shape_noise.fractal_octaves = 4
+	shape.noise = shape_noise
+	shape.seamless = true
+	shape.width = 1024
+	shape.height = 1024   # края гладкие, без «лесенки»
+	var detail := NoiseTexture2D.new()
+	var detail_noise := FastNoiseLite.new()
+	detail_noise.frequency = 0.05
+	detail.noise = detail_noise
+	detail.seamless = true
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/puddles.gdshader")
+	mat.set_shader_parameter("shape_noise", shape)
+	mat.set_shader_parameter("detail_noise", detail)
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(45.0, 45.0)
+	var water := MeshInstance3D.new()
+	water.mesh = plane
+	water.material_override = mat
+	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	player.get_parent().add_child(water)
+	water.global_position = Vector3(Structures.TALLEST_TOWER.x, Structures.TALLEST_HEIGHT + 0.015, Structures.TALLEST_TOWER.z)
 
 
 ## Красный огонь на шпиле башни позади героя: медленно дышит и заливает красным всю крышу.
