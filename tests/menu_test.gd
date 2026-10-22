@@ -75,10 +75,14 @@ func _run() -> void:
 	_key(KEY_ESCAPE)
 	await _wait(0.3)
 	_check("Esc — назад в меню", not prologue.settings.visible and prologue.menu.visible)
-	# Начать
+	# Начать (в пачке с прошлой игры осталось 3 — новая игра даёт полную)
+	Progress.cigarettes = 3
+	Game.smoke.left_in_pack = 3
 	prologue.menu.get_child(0).emit_signal("pressed")
 	await _wait(3.5)
 	_check("«Начать» — пролог пошёл", prologue.playing and prologue.index == 0)
+	_check("новая игра — пачка снова полная", Progress.cigarettes == Progress.FULL_PACK and Game.smoke.left_in_pack == Progress.FULL_PACK,
+		"%d сигарет" % Game.smoke.left_in_pack)
 	for i in prologue.PARAGRAPHS.size():
 		while not (prologue.index == i and prologue.text.modulate.a > 0.99):
 			await process_frame

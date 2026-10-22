@@ -67,6 +67,7 @@ func _start() -> void:
 	for b in menu.get_children():
 		b.disabled = true
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	Progress.new_game()   # новая игра — полная пачка
 	var fade := create_tween()
 	fade.tween_property(menu, "modulate:a", 0.0, 0.6)
 	fade.tween_callback(menu.queue_free)

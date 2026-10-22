@@ -43,7 +43,7 @@ const LIGHTER_POS := Vector3(-0.055, -0.115, -0.25)
 
 var player: CharacterBody3D
 var state := State.IDLE
-var left_in_pack := PACK_SIZE   # с прошлого круга и прошлого запуска — пачка не пополняется (Progress)
+var left_in_pack := PACK_SIZE   # с прошлого круга — пачка не пополняется, только в новой игре (Progress)
 var paper_len := PAPER_LEN
 var puffing := false
 var puff_amount := 0.0             # 0..1 — «приближение» сигареты к губам
