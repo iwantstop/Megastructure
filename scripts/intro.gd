@@ -33,10 +33,14 @@ const RUN_SHAKE := 0.45              # тряска камеры на разбе
 const JUMP_UP := 4.0                 # прыжок с края
 const HATCH := Vector3(6.0, 760.2, 121.0)   # люк позади героя — через него он поднялся на крышу
 const EDGE_LOOK := Vector3(4.0, 755.0, 95.0)   # куда смотреть на край крыши (и чуть в провал)
+const SIGN_SIZE := Vector2(30.0, 12.0)       # «НАСЛАЖДАЙСЯ» — билборд на фасаде, под краем крыши (между карнизами
+const SIGN_AT := Vector3(4.0, 730.0, 93.6)    # 710 и 750 м), прямо над тем, кто падает
 const DOG_TILT := deg_to_rad(20.0)   # «Настройки» — голова набок, вопросительно
 const CLOUDS_ABOVE := 830.0          # пока он на крыше — облака над ним (потолок), потом — на своё место
 const FALL_GRAVITY := 20.0           # с крыши — непрерывно, без склейки, поэтому быстрее обычного
 const FALL_CAP := 85.0
+const JUMP_FOG := 2.5                # с разбега город тонет в тумане (время всему подгрузиться, пока он падает)…
+const FOG_CLEARS := Vector2(480.0, 330.0)   # …и туман редеет, пока он пролетает эти высоты, — к машине обычный
 const STEER_TO := Vector2(4.0, 86.0) # в падении его сносит к подножию — туда, где под ним машина
 
 enum State { ROOF, FALLING, CAR, BLACKOUT, STORY, LYING, HINT, GETTING_UP, DONE }
@@ -116,6 +120,8 @@ func _process(delta: float) -> void:
 			var speed := -player.velocity.y
 			if from_roof:   # сносит к подножию башни — туда, где под ним пролетит машина
 				var p := player.global_position
+				var thick := clampf(inverse_lerp(FOG_CLEARS.y, FOG_CLEARS.x, p.y), 0.0, 1.0)
+				_jump_fog(JUMP_FOG * smoothstep(0.0, 1.0, thick), delta)
 				var steer := (STEER_TO - Vector2(p.x, p.z)) * 0.9
 				steer = steer.limit_length(9.0)
 				player.velocity.x = steer.x
@@ -138,6 +144,8 @@ func _process(delta: float) -> void:
 			if player.is_on_floor():
 				_impact()
 		State.CAR:
+			if from_roof:
+				_jump_fog(0.0, delta)
 			wind.fill(clampf(0.55 + car.s * 0.45, 0.0, 1.0))   # в дыру в крыше ревёт ветер
 		State.LYING:
 			if t > LIE_TIME:
@@ -190,6 +198,7 @@ func _stand_on_roof() -> void:
 	player.target_pitch = -0.05
 	player.head.rotation.x = player.target_pitch
 	_build_hatch()
+	_build_enjoy_sign()
 	if Game.clouds:
 		Game.clouds.position.y = CLOUDS_ABOVE
 	breath = AudioStreamPlayer.new()
@@ -221,6 +230,34 @@ func _build_hatch() -> void:
 	light.omni_range = 4.0
 	light.position = Vector3(0, 0.4, 0)
 	hatch.add_child(light)
+
+
+## «НАСЛАЖДАЙСЯ»: обычный билборд на фасаде, на 30 м ниже края, с которого он прыгнет, — лицом наружу.
+## Светящийся фиолетовый экран, чёрные буквы. С крыши его не видно; видно — падая на спине, глядя вверх.
+func _build_enjoy_sign() -> void:
+	var sign := Node3D.new()
+	player.get_parent().add_child(sign)
+	sign.global_transform = Transform3D(Basis.IDENTITY.rotated(Vector3.UP, PI), SIGN_AT)   # экран (+Z) — к -Z, наружу
+	var frame := Shapes.mat(Color(0.05, 0.05, 0.06), 0.5, 0.6)
+	Shapes.box(sign, Vector3(SIGN_SIZE.x + 0.8, SIGN_SIZE.y + 0.8, 1.2), Vector3(0, 0, -0.65), frame)   # короб до стены
+	var screen := Shapes.glow(Color(0.3, 0.08, 0.5), Color(0.55, 0.15, 1.0), 4.0)
+	Shapes.box(sign, Vector3(SIGN_SIZE.x, SIGN_SIZE.y, 0.05), Vector3(0, 0, 0.0), screen, false)
+	var text := Label3D.new()
+	text.text = "НАСЛАЖДАЙСЯ"
+	text.font_size = 220
+	text.pixel_size = 0.02
+	text.modulate = Color(0.0, 0.0, 0.0)
+	text.outline_size = 0
+	text.shaded = false
+	text.double_sided = false
+	text.position = Vector3(0, 0, 0.1)
+	sign.add_child(text)
+	var light := OmniLight3D.new()
+	light.light_color = Color(0.6, 0.25, 1.0)
+	light.light_energy = 2.5
+	light.omni_range = 26.0
+	light.position = Vector3(0, -4.0, 5.0)
+	sign.add_child(light)
 
 
 ## Главное меню: куда смотрит герой, пока мышь над пунктом. «start» — на край, с которого прыгнет;
@@ -258,6 +295,7 @@ func start_game() -> void:
 
 func _run_on_roof(delta: float) -> void:
 	player.fall_shake = move_toward(player.fall_shake, RUN_SHAKE, delta * 0.8)   # тряска нарастает с разбегом
+	_jump_fog(JUMP_FOG, delta)
 	var p := player.global_position
 	if not jumped and p.z <= ROOF_EDGE_Z + 0.6:
 		# Край — прыжок вперёд, взгляд вниз, в провал улиц.
@@ -392,10 +430,17 @@ func skip() -> void:
 	_get_up()
 
 
+## Туман прыжка: плавно к нужной густоте (journey.fog_boost — им же сгущается туман на скамейке).
+func _jump_fog(target: float, delta: float) -> void:
+	if Game.journey:
+		Game.journey.fog_boost = lerpf(Game.journey.fog_boost, target, 1.0 - exp(-2.0 * delta))
+
+
 ## Под тьмой после удара: утро обычного города — облака на своём месте, ночь кончилась, падение — как у всех.
 func _restore_world() -> void:
 	if Game.journey:
 		Game.journey.night = 0.0
+		Game.journey.fog_boost = 0.0
 	if Game.clouds:
 		Game.clouds.position.y = preload("res://scripts/world.gd").CLOUDS_Y
 	if breath:
