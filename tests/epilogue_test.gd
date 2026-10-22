@@ -46,6 +46,13 @@ func _process(delta: float) -> bool:
 			for c in world.get_children():   # рассказ о тепле герой уже слышал на мосту
 				if c.get_script() and str(c.get_script().resource_path).ends_with("journey.gd"):
 					c.warm_told = true
+			# Шесть «снимков» для слайдов: кадр игры, слегка разный по цвету.
+			var frame := root.get_viewport().get_texture().get_image()
+			frame.resize(960, 540)
+			for k in 6:
+				var copy := frame.duplicate()
+				copy.adjust_bcs(1.0 + k * 0.1, 1.0, 1.0)
+				Photos.taken.append(copy)
 			player.global_position = Mountain.CENTER + Vector3(0, Mountain.PEAK + 0.5, 0)
 			player.velocity = Vector3.ZERO
 			finale.start()

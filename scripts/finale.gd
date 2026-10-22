@@ -135,7 +135,7 @@ func _scatter_photos(index: int) -> void:
 	var delay := 0.0
 	for k in range(index * per_slide, mini((index + 1) * per_slide, all.size())):
 		var card := _photo_card(all[k], screen)
-		card.position = _free_spot(screen) - card.size / 2.0
+		card.position = _free_spot(screen, card.size) - card.size / 2.0
 		card.modulate.a = 0.0
 		card.scale = Vector2.ONE * 1.12
 		board.add_child(card)
@@ -167,13 +167,16 @@ func _photo_card(image: Image, screen: Vector2) -> Control:
 	return card
 
 
-## Случайное место на экране — не на полосе текста посередине и не прямо поверх прежних снимков.
-func _free_spot(screen: Vector2) -> Vector2:
-	var best := Vector2.ZERO
-	for attempt in 40:
-		var p := Vector2(rng.randf_range(0.12, 0.88) * screen.x, rng.randf_range(0.14, 0.86) * screen.y)
-		if absf(p.x - screen.x / 2.0) < screen.x * 0.36 and absf(p.y - screen.y / 2.0) < screen.y * 0.15:
-			continue   # там текст
+## Случайное место на экране — карточка целиком (с запасом на поворот) не заходит на полосу текста
+## посередине и не ложится прямо поверх прежних снимков.
+func _free_spot(screen: Vector2, card: Vector2) -> Vector2:
+	var half := Vector2.ONE * card.length() / 2.0          # повёрнутая карточка помещается в этот квадрат
+	var text_half := Vector2(screen.x * 0.33, screen.y * 0.07)   # полоса текста (до двух строк)
+	var best := screen / 2.0 + Vector2(0, screen.y * 0.3)
+	for attempt in 60:
+		var p := Vector2(rng.randf_range(half.x * 0.6, screen.x - half.x * 0.6), rng.randf_range(half.y * 0.6, screen.y - half.y * 0.6))
+		if absf(p.x - screen.x / 2.0) < text_half.x + half.x and absf(p.y - screen.y / 2.0) < text_half.y + half.y:
+			continue   # заходит на текст
 		best = p
 		var crowded := false
 		for q in photo_spots:
