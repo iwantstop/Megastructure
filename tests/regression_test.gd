@@ -10,7 +10,7 @@ extends SceneTree
 ## Итог — в консоли и в tests/regression_playthrough.txt (строка «ИТОГ»). Всё вместе — tests/run_regression.bat.
 
 const LINES := ["Стой", "Не уходи", "Останься"]
-const SEIZURE_LINES := ["Скоро это закончится...", "Возможно именно сегодня...", "Закроются глаза..."]
+const SEIZURE_LINES := ["Скоро это закончится...", "Чувствуешь?", "Закроются глаза..."]
 
 var world: Node
 var player: CharacterBody3D
@@ -227,7 +227,7 @@ func _fall_and_wake() -> void:
 	await _wait(5.0)
 	_check("во тьме текст ждёт пробел", intro.state == intro.State.STORY and intro.story.modulate.a > 0.99,
 		"\"%s…\"" % intro.story.text.substr(0, 30))
-	_check("текст во тьме — от первого лица", intro.story.text.begins_with("Я лежал"))
+	_check("текст во тьме", intro.story.text.begins_with("Лежа на земле"))
 	_tap(KEY_SPACE)
 	await _until(func() -> bool: return intro.state == intro.State.LYING, 5.0)
 	await _wait(1.0)
@@ -274,7 +274,7 @@ func _first_minutes() -> void:
 	_check("выдох — дым", smoke.exhale.emitting and smoke.puff_amount < 0.5)
 	# Рассказ об ангеле (через ~11,5 с после подъёма) и новое задание.
 	var narrated := await _until(func() -> bool: return hud.narration.modulate.a > 0.99, 20.0)
-	_check("рассказ об ангеле — от первого лица", narrated and hud.narration.text.begins_with("В отчаянии") and "мне умереть" in hud.narration.text,
+	_check("рассказ об ангеле", narrated and hud.narration.text.begins_with("В отчаянии") and "не даёт умереть" in hud.narration.text,
 		"через %.1f с после подъёма" % ((Time.get_ticks_msec() - stood_at) / 1000.0))
 	var gone := await _until(func() -> bool: return hud.narration.modulate.a < 0.01, 30.0)
 	await _wait(0.5)
@@ -419,7 +419,7 @@ func _farewell() -> void:
 	steer_path = false
 	_check("через ~100 м — глитч к вершине", hit and absf(player.global_position.y - (Mountain.PEAK - 40.0)) < 3.0, "y=%.0f" % player.global_position.y)
 	var sun := await _until(func() -> bool: return hud.narration.modulate.a > 0.5, 6.0)
-	_check("рассказ о солнце — от первого лица", sun and hud.narration.text.begins_with("Поднявшись выше облаков, я"))
+	_check("рассказ о солнце", sun and hud.narration.text.begins_with("Поднявшись выше облаков, впервые"))
 	_check("на подъёме падают бинты", bandages.dropped >= 1, "%d полосок" % bandages.dropped)
 	_check("после прощания ангел больше не приходит", presence.farewell_done)
 	_tap(KEY_C)
