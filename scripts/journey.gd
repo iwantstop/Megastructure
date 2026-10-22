@@ -100,6 +100,7 @@ func _turn_to(point: Vector3) -> Tween:
 func _apply(k: float) -> void:
 	var dry := smoothstep(0.0, 0.45, k)
 	rain.amount_ratio = 1.0 - dry
+	RenderingServer.global_shader_parameter_set(&"rain_amount", 1.0 - dry)   # круги от капель в лужах (concrete.gdshader)
 
 	var horizon := COLD_HORIZON.lerp(WARM_HORIZON, k)
 	sky.sky_top_color = COLD_TOP.lerp(WARM_TOP, k)

@@ -19,6 +19,7 @@ uniform float bump = 1.0;
 uniform float puddles = 0.0;         // лужи на горизонтальных поверхностях
 uniform float brick_size = 0.0;      // длина кирпича в метрах, 0 — без кирпичной кладки
 uniform vec3 mortar_color : source_color = vec3(0.55, 0.54, 0.5);
+global uniform float rain_amount;    // 0..1 — сколько дождя (journey.gd): круги от капель в лужах
 
 varying vec3 wpos;
 varying vec3 wnrm;
@@ -36,6 +37,28 @@ float tri(vec3 p, vec3 w, float s) {
 
 float hash(vec2 v) {
 	return fract(sin(dot(v, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+vec2 hash2(vec2 c) {
+	return fract(sin(vec2(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)))) * 43758.5453);
+}
+
+// Круги от капель: в каждой клетке — свой, расходится и гаснет (как в лужах на крыше, puddles.gdshader).
+float ripples(vec2 p) {
+	vec2 cell = floor(p);
+	vec2 f = fract(p);
+	float h = 0.0;
+	for (int j = -1; j <= 1; j++) {
+		for (int i = -1; i <= 1; i++) {
+			vec2 o = vec2(float(i), float(j));
+			vec2 rnd = hash2(cell + o);
+			float t = fract(TIME * 1.1 * (0.7 + rnd.y * 0.6) + rnd.x);
+			float d = length(o + rnd - f);
+			float r = t * 0.9;
+			h += sin((d - r) * 40.0) * smoothstep(0.08, 0.0, abs(d - r)) * (1.0 - t) * (1.0 - t);
+		}
+	}
+	return h;
 }
 
 void fragment() {
@@ -100,7 +123,19 @@ void fragment() {
 		col *= 1.0 - damp * 0.15 - wet * 0.15;
 	}
 
+	// Дождь бьёт по лужам: круги расходятся (только вблизи — вдали они мерцали бы).
+	vec3 drip = vec3(0.0);
+	float ring_glow = 0.0;
+	float rain_here = wet * rain_amount * (1.0 - smoothstep(12.0, 30.0, length(VERTEX)));
+	if (rain_here > 0.01) {
+		vec2 q = wpos.xz * 1.6;
+		float h0 = ripples(q);
+		drip = vec3(-(ripples(q + vec2(0.02, 0.0)) - h0), 0.0, -(ripples(q + vec2(0.0, 0.02)) - h0)) / 0.02 * 0.012 * rain_here;
+		ring_glow = max(h0, 0.0) * rain_here;   // гребни кругов ловят отсвет неба и огней
+	}
+
 	ALBEDO = col;
+	EMISSION = vec3(0.07, 0.075, 0.09) * ring_glow;
 	ROUGHNESS = mix(roughness_value, 0.04, wet);
 
 	// Рельеф из того же шума и швов (в лужах поверхность ровная).
@@ -112,4 +147,5 @@ void fragment() {
 	float det = dot(dpdx, r1);
 	vec3 grad = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
 	NORMAL = normalize(abs(det) * NORMAL - grad * bump * (1.0 - far));
+	NORMAL = normalize(NORMAL + (VIEW_MATRIX * vec4(drip, 0.0)).xyz);
 }
