@@ -25,6 +25,7 @@ var speaker: AudioStreamPlayer3D
 func setup(ads: Array[Dictionary]) -> void:
 	for ad in ads:
 		screens.append((ad.xform as Transform3D).origin)
+	set_meta("ads", ads)   # для проб и тестов: где какие экраны
 
 
 func _ready() -> void:

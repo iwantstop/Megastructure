@@ -35,12 +35,15 @@ var neon: Array[StandardMaterial3D] = []
 var neon_energy: Array[float] = []
 var beacon: StandardMaterial3D
 var holograms: Array[Node3D] = []
+var ad_glows := {}   # цвет рекламы -> материал светящегося фона
 
 const AD_TEXTS := [
 	"КУПИ СЕБЕ СЧАСТЬЕ", "БОЛЬШЕ. ЕЩЁ. СЕЙЧАС.", "ТЫ ЗАСЛУЖИВАЕШЬ ВСЁ", "ЛЮБОВЬ 24/7",
 	"ДОВЕРЯЙ ТОЛЬКО СЕБЕ", "ПОБЕДИ БЛИЖНЕГО", "ЗАБУДЬ", "КРЕДИТ НА ЖИЗНЬ",
 	"БУДЬ ЛУЧШЕ ДРУГИХ", "ВОЗЬМИ ВСЁ", "НИКТО НЕ УЗНАЕТ", "НАСЛАЖДАЙСЯ",
 ]
+const AD_GLOW := 1.8          # яркость светящегося фона рекламы: мягкий ореол в тумане, но текст читается
+const AD_TEXT_GLOW := 1.8     # светящийся текст на тёмных экранах (было ×3 — расплывался)
 const LOADING_TITLE: String = preload("res://scripts/prologue.gd").TITLE
 const NEON_COLORS := [
 	Color(1.0, 0.1, 0.55), Color(0.1, 0.85, 1.0), Color(1.0, 0.15, 0.1),
@@ -751,7 +754,7 @@ func _make_ads(spots: Array[Dictionary]) -> void:
 		quad.size = size
 		var panel := MeshInstance3D.new()
 		panel.mesh = quad
-		panel.material_override = neon[k] if bright_panel else dark
+		panel.material_override = _ad_glow(k) if bright_panel else dark
 		panel.transform = xform
 		_limit_range(panel, 450.0 if size.x < 12.0 else 0.0)
 		add_child(panel)
@@ -764,7 +767,7 @@ func _make_ads(spots: Array[Dictionary]) -> void:
 		label.shaded = false
 		label.double_sided = false
 		label.pixel_size = minf(size.x * 0.85 / (text.length() * 96 * 0.62), size.y * 0.5 / 96.0)
-		label.modulate = Color(0.02, 0.02, 0.02) if bright_panel else color * 3.0
+		label.modulate = Color(0.02, 0.02, 0.02) if bright_panel else color * AD_TEXT_GLOW
 		label.transform = xform.translated_local(Vector3(0, 0, 0.03))
 		_limit_range(label, 450.0 if size.x < 12.0 else 0.0)
 		add_child(label)
@@ -779,6 +782,15 @@ func _make_ads(spots: Array[Dictionary]) -> void:
 			light.transform = xform.translated_local(Vector3(0, -size.y * 0.3, 4.0))
 			add_child(light)
 			lights_left -= 1
+
+
+## Светящийся фон рекламы: мягче неона (у того свечение ×6 — в тумане экран раздувало в белое пятно и тёмный
+## текст на нём было не прочитать). Один материал на цвет.
+func _ad_glow(k: int) -> StandardMaterial3D:
+	if not ad_glows.has(k):
+		var color: Color = NEON_COLORS[k]
+		ad_glows[k] = Shapes.glow(color * 0.35, color, AD_GLOW)
+	return ad_glows[k]
 
 
 ## Слой свинцовых туч над всем миром.

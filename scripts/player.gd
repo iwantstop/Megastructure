@@ -258,16 +258,23 @@ func _process(delta: float) -> void:
 	if panic > 0.0:
 		# Падение как в Mirror's Edge: тяжёлое тело медленно заваливается и кувыркается (низкие частоты),
 		# голова плавно поворачивается (panic_look), а поверх — мелкая дрожь от встречного ветра.
+		# Поверх — хаос вращения по всем осям: тело кувыркается и закручивается вокруг оси взгляда
+		# (горизонт неровно заваливается то в одну, то в другую сторону), наклон и поворот гуляют сами по себе.
 		camera.rotation += Vector3(
-			panic_look.y + _tumble(300.0) * 0.16 * panic + _buffet(310.0) * 0.006 * panic,
-			panic_look.x + _tumble(400.0) * 0.14 * panic + _buffet(410.0) * 0.006 * panic,
-			_tumble(500.0) * 0.3 * panic + _buffet(510.0) * 0.004 * panic)
+			panic_look.y + _tumble(300.0) * 0.16 * panic + _chaos(320.0) * 0.14 * panic + _buffet(310.0) * 0.006 * panic,
+			panic_look.x + _tumble(400.0) * 0.14 * panic + _chaos(420.0) * 0.18 * panic + _buffet(410.0) * 0.006 * panic,
+			_tumble(500.0) * 0.55 * panic + _chaos(520.0) * 0.4 * panic + _buffet(510.0) * 0.004 * panic)
 	camera.fov = FOV + PANIC_FOV * panic
 
 
 ## Медленное заваливание тела в падении: плавно, около одного «качка» за 2–3 секунды.
 func _tumble(offset: float) -> float:
 	return noise.get_noise_2d(shake_time * 1.6, offset)
+
+
+## Хаотичное вращение в панике: заметно быстрее заваливания, но плавное — без рывков кадра.
+func _chaos(offset: float) -> float:
+	return noise.get_noise_2d(shake_time * 7.0, offset) + 0.4 * noise.get_noise_2d(shake_time * 15.0, offset + 30.0)
 
 
 ## Дрожь от встречного ветра: быстрая и мелкая.
