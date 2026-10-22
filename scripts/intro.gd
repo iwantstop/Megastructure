@@ -36,6 +36,7 @@ const EDGE_LOOK := Vector3(4.0, 755.0, 95.0)   # куда смотреть на 
 const SIGN_SIZE := Vector2(30.0, 12.0)       # «НАСЛАЖДАЙСЯ» — билборд на фасаде, под краем крыши (между карнизами
 const SIGN_AT := Vector3(4.0, 730.0, 93.6)    # 710 и 750 м), прямо над тем, кто падает
 const DOG_TILT := deg_to_rad(20.0)
+const BEACON_Y := 790.0              # красный огонь на шпиле самой высокой башни (шпиль — до 840 м)
 const STARS_R := 5000.0              # звёзды — на сфере этого радиуса вокруг крыши   # «Настройки» — голова набок, вопросительно
 const CLOUDS_ABOVE := 830.0          # пока он на крыше — облака над ним (потолок), потом — на своё место
 const FALL_GRAVITY := 20.0           # с крыши — непрерывно, без склейки, поэтому быстрее обычного
@@ -59,6 +60,8 @@ var state := State.FALLING
 var from_roof := false               # новая игра: начать на крыше (world.gd), иначе — сразу падение
 var step_tween: Tween                # прыжок с края: тьма — и падение
 var running := false
+var beacon: OmniLight3D              # красный луч со шпиля на крышу — только ночью, во вступлении
+var puddle_mat: StandardMaterial3D   # лужи: рябь бежит (капли)
 var stars: MultiMeshInstance3D       # звёзды ночного неба во вступлении
 var fall_fx := 0.0                   # 0..1 — помехи, тёмные края и приближение в падении с крыши
 var glitch_jerk := 0.0
@@ -120,6 +123,8 @@ func _process(delta: float) -> void:
 	t += delta
 	match state:
 		State.ROOF:
+			if puddle_mat:
+				puddle_mat.uv1_offset += Vector3(0.013, 0.0, 0.021) * delta   # рябь от капель
 			if running:
 				_run_on_roof(delta)
 		State.FALLING:
@@ -209,7 +214,7 @@ func _stand_on_roof() -> void:
 	_build_railing()
 	_build_puddles()
 	_build_stars()
-	_build_wet_roof()
+	_build_beacon()
 	_build_enjoy_sign()
 	if Game.clouds:
 		Game.clouds.position.y = CLOUDS_ABOVE
@@ -268,9 +273,35 @@ func _build_railing() -> void:
 ## Лужи и ручьи: тёмная вода-зеркало пятнами по крыше и тонкие струйки к краю.
 func _build_puddles() -> void:
 	var water := StandardMaterial3D.new()
-	water.albedo_color = Color(0.02, 0.022, 0.028)
-	water.roughness = 0.03
-	water.metallic = 0.15
+	# Вода — в тон мокрому бетону, с широким бликом: ловит красный огонь со шпиля и отсвет неба, а не
+	# зеркалит чёрное небо (тогда лужи выглядят дырами).
+	# Лужа — плёнка в пару сантиметров над бетоном: тени крыши её «накрывают» (она тоньше запаса теней), поэтому
+	# тени она не принимает. Вода живая: рябь от капель (карта нормалей бежит), блеск пятнами (шероховатость
+	# по шуму), край темнее середины — мокрый бетон под тонким слоем воды.
+	var ripple_noise := FastNoiseLite.new()
+	ripple_noise.frequency = 0.08
+	var ripples := NoiseTexture2D.new()
+	ripples.noise = ripple_noise
+	ripples.as_normal_map = true
+	ripples.bump_strength = 8.0
+	ripples.seamless = true
+	var gloss_noise := FastNoiseLite.new()
+	gloss_noise.frequency = 0.03
+	var gloss := NoiseTexture2D.new()
+	gloss.noise = gloss_noise
+	gloss.seamless = true
+	water.albedo_color = Color(0.36, 0.37, 0.41)   # мокрый бетон чуть темнее сухого (а не в разы: ночью это чёрная дыра)
+	water.roughness = 0.12
+	water.roughness_texture = gloss
+	water.metallic = 0.0
+	water.metallic_specular = 0.5
+	water.normal_enabled = true
+	water.normal_texture = ripples
+	water.normal_scale = 1.2
+	water.uv1_triplanar = true
+	water.uv1_scale = Vector3(0.6, 0.6, 0.6)
+	water.disable_receive_shadows = true
+	puddle_mat = water
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
 	var roof := Node3D.new()
@@ -300,6 +331,30 @@ func _build_puddles() -> void:
 			var b: Vector3 = seg[1]
 			var strip := Shapes.box(roof, Vector3(rng.randf_range(0.1, 0.22), 0.006, a.distance_to(b)), (a + b) / 2.0, water, false)
 			strip.rotation.y = atan2(b.x - a.x, b.z - a.z)
+
+
+## Красный огонь на шпиле башни позади героя: медленно дышит и заливает красным всю крышу.
+func _build_beacon() -> void:
+	var lamp := Shapes.glow(Color(0.4, 0.02, 0.02), Color(1.0, 0.06, 0.04), 6.0)
+	var bulb := SphereMesh.new()
+	bulb.radius = 0.7
+	bulb.height = 1.4
+	var top := Vector3(Structures.TALLEST_TOWER.x, BEACON_Y, Structures.TALLEST_TOWER.z)
+	var holder := Node3D.new()
+	player.get_parent().add_child(holder)
+	holder.global_position = top
+	Shapes.node(holder, bulb, Vector3.ZERO, lamp, false)
+	beacon = OmniLight3D.new()   # лампа светит во все стороны — красным заливает всю крышу
+	beacon.light_color = Color(1.0, 0.12, 0.08)
+	beacon.light_energy = 7.0
+	beacon.omni_range = 75.0
+	beacon.omni_attenuation = 0.8
+	beacon.shadow_enabled = true
+	player.get_parent().add_child(beacon)
+	beacon.global_position = top + Vector3(0, -1.0, 0)
+	var pulse := create_tween().set_loops()
+	pulse.tween_property(beacon, "light_energy", 3.5, 1.6).set_trans(Tween.TRANS_SINE)
+	pulse.tween_property(beacon, "light_energy", 7.0, 1.6).set_trans(Tween.TRANS_SINE)
 
 
 ## Звёзды: россыпь неярких точек по небу (в просветах ночных туч), туман их не гасит.
@@ -334,33 +389,6 @@ func _build_stars() -> void:
 	stars.multimesh = mm
 	stars.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	player.get_parent().add_child(stars)
-
-
-## Мокрая крыша: тёмная глянцевая плёнка воды по всей крыше, с лужами (там глаже — отражения, SSR).
-func _build_wet_roof() -> void:
-	var puddles := NoiseTexture2D.new()
-	var noise := FastNoiseLite.new()
-	noise.frequency = 0.012
-	noise.fractal_octaves = 3
-	puddles.noise = noise
-	puddles.width = 512
-	puddles.height = 512
-	puddles.seamless = true
-	var water := StandardMaterial3D.new()
-	water.albedo_color = Color(0.1, 0.11, 0.13, 0.3)   # почти прозрачная: бетон виден, блестит вода
-	water.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	water.metallic = 0.4
-	water.roughness = 0.12
-	water.roughness_texture = puddles   # пятна: где-то лужа как зеркало, где-то просто мокрый бетон
-	water.uv1_scale = Vector3(3, 3, 3)
-	var film := MeshInstance3D.new()
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(45.0, 45.0)
-	film.mesh = plane
-	film.material_override = water
-	film.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	player.get_parent().add_child(film)
-	film.global_position = Vector3(Structures.TALLEST_TOWER.x, Structures.TALLEST_HEIGHT + 0.02, Structures.TALLEST_TOWER.z)
 
 
 ## Дождь по крыше: ровный тихий шелест и редкие крупные капли (по металлу люка, по лужам); петля 6 с.
@@ -649,6 +677,9 @@ func _jump_fog(target: float, delta: float) -> void:
 ## Под тьмой после удара: утро обычного города — облака на своём месте, ночь кончилась, падение — как у всех.
 func _restore_world() -> void:
 	_end_fall_fx()
+	if beacon:
+		beacon.queue_free()   # днём красного пятна на крыше нет (огонь на шпиле остаётся)
+		beacon = null
 	if stars:
 		stars.queue_free()   # ночь кончилась
 		stars = null
