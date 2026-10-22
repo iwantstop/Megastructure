@@ -172,7 +172,20 @@ func _sample(x: float, z: float) -> Vector2:
 			return Vector2(h0, 1.0)
 		var drop := r - r_in - PATH_W / 2.0
 		var cliff := maxf(h0 - drop * 1.8 + rock * 12.0, -500.0)
-		return Vector2(lerpf(cliff, _terrace(cliff, rock), smoothstep(3.0, 15.0, drop)), 0.0)
+		var outer := lerpf(cliff, _terrace(cliff, rock), smoothstep(3.0, 15.0, drop))
+		# Перед самым началом тропы (если смотреть с моста — справа) снаружи первого витка был отвесный срез
+		# до самого низа и шов с землёй у начала тропы. Здесь склон — как стена между витками: от тропы
+		# первого витка вниз к земле у начала тропы, с выступами и террасами.
+		var seam := smoothstep(TAU - 1.7, TAU - 0.02, theta0)
+		if seam > 0.0:
+			var r_start := R_BASE + C * (TAU - theta0)   # где шла бы тропа у земли, продолжись она назад
+			var tt := clampf((r - r_in - PATH_W / 2.0) / maxf(r_start - r_in - PATH_W / 2.0, 1.0), 0.0, 1.0)
+			var slope := lerpf(h0, 0.0, smoothstep(0.0, 1.0, tt)) + rock * 25.0 * sin(tt * PI)
+			var ramp := lerpf(slope, _terrace(slope, rock), smoothstep(0.05, 0.25, tt) * (1.0 - smoothstep(0.85, 0.97, tt)))
+			if r > r_start:
+				ramp = maxf(-(r - r_start) * 1.8 + rock * 12.0, -500.0)   # за ним — обрыв в бездну, как у начала тропы
+			outer = lerpf(outer, ramp, seam)
+		return Vector2(outer, 0.0)
 
 	var h_out := path_height(theta_out)
 	# Пещера: выемка в стене над тропой с ровным полом — свод и стены построит mountain_features.gd.

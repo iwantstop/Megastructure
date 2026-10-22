@@ -40,3 +40,6 @@ func _process(_delta: float) -> void:
 		visible = false
 		set_process(false)
 		body.queue_free()
+		if Game.hud:   # исчезло — а снимок бы что-то и показал: подсказка на 4 с
+			Game.hud.action_hint(Photos.HINT, true)
+			Game.hud.get_tree().create_timer(4.0).timeout.connect(func() -> void: Game.hud.action_hint(Photos.HINT, false))
