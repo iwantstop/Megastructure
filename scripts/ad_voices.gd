@@ -1,28 +1,25 @@
 extends Node
 
-## Голоса рекламы: в городе горящие билборды иногда «говорят» — обрывки из пролога, низким медленным голосом,
-## громче, если экран близко. Голос — встроенный в Windows синтез речи (русский «Павел» или «Ирина»);
-## если русского голоса в системе нет — реклама просто молчит.
+## Голоса рекламы: в городе горящие билборды иногда «говорят» — обрывки из пролога. Звук идёт от самого экрана,
+## через громкоговоритель (узкая полоса частот, лёгкий хрип) и с эхом улицы — где-то на фоне, над городом.
+## Фразы записаны заранее голосом Windows (assets/sounds/ads), поэтому работают на любом компьютере.
 
-const PHRASES := [
-	"Меркантильность здесь возведена в культ.",
-	"Эгоизм стал нормой.",
-	"Духовный упадок — обыденностью.",
-	"В этом мире нет места искренности.",
-	"Каждый стремится обмануть другого.",
-	"Ради денег. Ради минутного удовольствия.",
-	"Ради самого факта победы над ближним.",
-	"Разврат — едва ли не единственная форма общения.",
+const VOICES := [
+	preload("res://assets/sounds/ads/ad_1.wav"), preload("res://assets/sounds/ads/ad_2.wav"),
+	preload("res://assets/sounds/ads/ad_3.wav"), preload("res://assets/sounds/ads/ad_4.wav"),
+	preload("res://assets/sounds/ads/ad_5.wav"), preload("res://assets/sounds/ads/ad_6.wav"),
+	preload("res://assets/sounds/ads/ad_7.wav"), preload("res://assets/sounds/ads/ad_8.wav"),
 ]
 const PAUSE := Vector2(25.0, 55.0)   # между фразами, с
-const HEAR := 70.0                   # дальше этого экран не слышно, м
+const HEAR := 90.0                   # дальше этого экран не слышно, м
+const PITCH := 0.84                  # ниже и медленнее записи — обезличенно
 const Structures = preload("res://scripts/structures.gd")
 
 var screens: Array[Vector3] = []
-var voice := ""
 var timer := 12.0
 var rng := RandomNumberGenerator.new()
 var last_phrase := -1
+var speaker: AudioStreamPlayer3D
 
 
 func setup(ads: Array[Dictionary]) -> void:
@@ -32,18 +29,17 @@ func setup(ads: Array[Dictionary]) -> void:
 
 func _ready() -> void:
 	rng.randomize()
-	if DisplayServer.has_feature(DisplayServer.FEATURE_TEXT_TO_SPEECH):
-		for wanted in ["Pavel", "Irina"]:
-			for v in DisplayServer.tts_get_voices():
-				if v.get("language", "").begins_with("ru") and wanted in v.get("name", ""):
-					voice = v.get("id")
-					break
-			if voice != "":
-				break
+	speaker = AudioStreamPlayer3D.new()
+	speaker.bus = &"Ads"
+	speaker.pitch_scale = PITCH
+	speaker.unit_size = 14.0
+	speaker.max_distance = HEAR
+	speaker.volume_db = 2.0
+	add_child(speaker)
 
 
 func _process(delta: float) -> void:
-	if voice == "" or Game.player == null:
+	if Game.player == null:
 		return
 	timer -= delta
 	if timer > 0.0:
@@ -55,24 +51,19 @@ func _process(delta: float) -> void:
 ## Ближайший экран в пределах слышимости говорит фразу. Возвращает, заговорил ли.
 func speak_nearest() -> bool:
 	var p := Game.player.global_position
-	if voice == "" or not Structures.PLATFORM.has_point(Vector2(p.x, p.z)) or p.y > 300.0 or Game.player.locked:
+	if not Structures.PLATFORM.has_point(Vector2(p.x, p.z)) or p.y > 300.0 or Game.player.locked or speaker.playing:
 		return false
-	var nearest := INF
+	var nearest := Vector3.INF
 	for screen in screens:
-		nearest = minf(nearest, screen.distance_to(p))
-	if nearest > HEAR:
+		if screen.distance_to(p) < nearest.distance_to(p):
+			nearest = screen
+	if nearest.distance_to(p) > HEAR:
 		return false
-	var pick := rng.randi() % PHRASES.size()
+	var pick := rng.randi() % VOICES.size()
 	if pick == last_phrase:
-		pick = (pick + 1) % PHRASES.size()
+		pick = (pick + 1) % VOICES.size()
 	last_phrase = pick
-	var loud: float = clampf(1.0 - (nearest - 10.0) / (HEAR - 10.0), 0.15, 1.0)
-	var volume: float = Settings.get_value("master") * Settings.get_value("world")
-	DisplayServer.tts_stop()
-	DisplayServer.tts_speak(PHRASES[pick], voice, int(100.0 * loud * volume), 0.6, 0.8)
+	speaker.global_position = nearest
+	speaker.stream = VOICES[pick]
+	speaker.play()
 	return true
-
-
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_PAUSED or what == NOTIFICATION_EXIT_TREE:
-		DisplayServer.tts_stop()   # пауза или выход — голос замолкает

@@ -76,7 +76,7 @@ static func apply() -> void:
 static func apply_audio() -> void:
 	_bus("Master", get_value("master"), 0.0)
 	_bus("Music", get_value("music"), world_fade_db + duck_db)
-	for bus in ["Ambience", "Interior", "Steps"]:
+	for bus in ["Ambience", "Interior", "Steps", "Ads"]:
 		_bus(bus, get_value("world"), (world_fade_db if bus == "Ambience" else 0.0) + duck_db)
 
 

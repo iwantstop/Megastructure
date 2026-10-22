@@ -1,7 +1,8 @@
 extends Node
 
 ## Припадки на мосту и у подножия горы. Пока герой идёт к горе, в определённых точках его «накрывает»: резко,
-## на 1,2 секунды кадр рвётся помехами, весь звук пропадает — только сердце и звон в ушах, на миг — чернота, и он приходит в себя
+## на 1,2 секунды кадр рвётся помехами и цифровым треском, весь звук мира пропадает — только сердце и звон в ушах
+## (стихают за 13 с), на миг — чернота, и он приходит в себя
 ## уже намного ближе к горе. После каждого припадка внизу плавно проступают его мысли.
 ## Так мост (2 км) проходится за полторы минуты, а переход к финалу становится событием.
 ## Камеру не трясём (автора укачивает) — всё искажение только экранное.
@@ -41,6 +42,10 @@ var rng := RandomNumberGenerator.new()
 var stops: Array = []         # STOPS с рассчитанными долями тропы
 
 var heart: AudioStreamPlayer   # во время и после припадка — только сердцебиение и звон в ушах
+var noise_player: AudioStreamPlayer   # цифровой треск срыва кадра (не глушится вместе с миром)
+var noise_playback: AudioStreamGeneratorPlayback
+var crush := 0.0              # текущий «битый» отсчёт треска
+var crush_hold := 0
 var ring: AudioStreamPlayer
 var aftershock: Tween
 
@@ -57,6 +62,13 @@ func _ready() -> void:
 		if stop.has("from_height"):
 			stop.path_at = Mountain.fraction_after(Mountain.fraction_at_height(stop.from_height), stop.after_m)
 			stop.path_to = Mountain.fraction_at_height(stop.to_height)
+	var generator := AudioStreamGenerator.new()
+	generator.mix_rate = MIX_RATE
+	generator.buffer_length = 0.1
+	noise_player = AudioStreamPlayer.new()
+	noise_player.stream = generator
+	noise_player.volume_db = -4.0
+	add_child(noise_player)
 	heart = AudioStreamPlayer.new()
 	heart.stream = _heartbeat()
 	add_child(heart)
@@ -86,6 +98,7 @@ func _process(delta: float) -> void:
 	else:
 		_finish()
 		return
+	_fill_noise()
 
 
 ## Следующая точка: герой до неё дошёл — пора припадка; но если посреди экрана рассказ (hud.narrate),
@@ -140,6 +153,8 @@ func _start(index: int) -> void:
 	if Game.smoke:
 		Game.smoke.seizure_hit()  # сигарета гаснет, руки потом дрожат
 	_silence_world()
+	noise_player.play()
+	noise_playback = noise_player.get_stream_playback()
 
 
 ## Кадр рвётся рывками: сила и «рисунок» помех меняются скачками, один короткий негатив за припадок.
@@ -178,6 +193,7 @@ func _finish() -> void:
 	screen.set_shader_parameter("glitch", 0.0)
 	screen.set_shader_parameter("glitch_invert", 0.0)
 	screen.set_shader_parameter("blackout", 0.0)
+	noise_player.stop()
 	player.locked = false
 	var line: String = stops[active].line if active >= 0 else stops[mini(next_stop, stops.size() - 1)].line
 	var story: String = stops[active].get("story", "") if active >= 0 else ""
@@ -189,6 +205,19 @@ func _finish() -> void:
 		hud.say(line)
 	if hud and story != "":
 		hud.narrate(story)
+
+
+## Цифровой треск: шум с «залипанием» отсчётов (как битый сигнал), в черноте — тишина.
+func _fill_noise() -> void:
+	if noise_playback == null:
+		return
+	var silent := t >= BLACK_FROM and t < BLACK_TO
+	for frame in noise_playback.get_frames_available():
+		if crush_hold <= 0:
+			crush = (rng.randf() * 2.0 - 1.0) * (0.0 if silent else level)
+			crush_hold = rng.randi_range(4, 60)
+		crush_hold -= 1
+		noise_playback.push_frame(Vector2(crush, crush) * 0.6)
 
 
 ## Весь звук мира разом пропадает — остаются сердцебиение и звон в ушах. За AFTERSHOCK секунд они стихают,

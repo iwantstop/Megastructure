@@ -43,7 +43,7 @@ var rng := RandomNumberGenerator.new()
 static func make_buses() -> void:
 	if AudioServer.get_bus_index("Ambience") >= 0:
 		return
-	for bus_name in ["Ambience", "Interior", "Steps", "Music"]:
+	for bus_name in ["Ambience", "Interior", "Steps", "Music", "Ads"]:
 		AudioServer.add_bus()
 		var i := AudioServer.bus_count - 1
 		AudioServer.set_bus_name(i, bus_name)
@@ -66,6 +66,28 @@ static func make_buses() -> void:
 	hall.damping = 0.5
 	hall.wet = 0.4
 	AudioServer.add_bus_effect(AudioServer.get_bus_index("Music"), hall)
+	# Реклама: громкоговоритель (только середина частот, чуть хрипит) и эхо улиц между башнями.
+	var ads := AudioServer.get_bus_index("Ads")
+	var low_cut := AudioEffectHighPassFilter.new()
+	low_cut.cutoff_hz = 380.0
+	AudioServer.add_bus_effect(ads, low_cut)
+	var high_cut := AudioEffectLowPassFilter.new()
+	high_cut.cutoff_hz = 3200.0
+	AudioServer.add_bus_effect(ads, high_cut)
+	var horn := AudioEffectDistortion.new()
+	horn.mode = AudioEffectDistortion.MODE_OVERDRIVE
+	horn.drive = 0.35
+	horn.post_gain = -4.0
+	AudioServer.add_bus_effect(ads, horn)
+	var street := AudioEffectReverb.new()
+	street.predelay_msec = 140.0
+	street.predelay_feedback = 0.45
+	street.room_size = 0.95
+	street.damping = 0.35
+	street.spread = 1.0
+	street.dry = 0.55
+	street.wet = 0.6
+	AudioServer.add_bus_effect(ads, street)
 
 
 func setup(p_player: CharacterBody3D, p_journey: Node) -> void:

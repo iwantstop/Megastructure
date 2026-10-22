@@ -5,7 +5,8 @@ extends CanvasLayer
 ## за её спиной взрывается солнце: ослепительное ядро, ударная волна по небу, вспышка, гул.
 ## Потом он ложится, закрывает глаза; мир медленно растворяется в тёплом свете, потом в темноте.
 ## В темноте — заключительные слайды (EPILOGUE), как пролог: по центру, каждый ждёт пробела. Под текстом —
-## снимки, которые игрок сделал за этот круг (photos.gd): разбросаны как попало, на каждом слайде добавляются ещё.
+## снимки, которые игрок сделал за этот круг (photos.gd): плавно всплывают из темноты вокруг текста, без рамок,
+## на каждом слайде — ещё несколько.
 ## Последний растаял — и он снова стоит на крыше той самой башни, с которой прыгнул. Круг замкнулся.
 
 const SILENCE := 10.0  # сколько он смотрит на солнце, стоя на коленях
@@ -21,6 +22,9 @@ const EPILOGUE := [
 	"Теперь это обречено на покой",
 ]
 const SLIDE_FADE := 1.6
+const PHOTO_ALPHA := 0.75       # снимки полупрозрачные (на 15% прозрачнее, чем были)
+const PHOTO_FADE := 2.2        # снимок проявляется из темноты, с
+const PHOTO_RISE := 26.0       # …и всплывает на столько пикселей
 const Structures = preload("res://scripts/structures.gd")
 const ROOF_WAKE := 4.0          # за столько секунд на крыше спадает темнота
 
@@ -31,6 +35,7 @@ var slide_text: Label
 var slide_hint: Label
 var board: Control             # снимки игрока на заключительных слайдах
 var photo_spots: Array[Vector2] = []
+var _edge_material: ShaderMaterial
 var rng := RandomNumberGenerator.new()
 var slide := -1
 var slide_ready := false       # слайд проявился — пробел листает дальше
@@ -125,46 +130,55 @@ func _next_slide() -> void:
 	tween.tween_property(slide_hint, "modulate:a", 1.0, 0.8)
 
 
-## Снимки этого слайда (свою долю от всех снимков круга) — бросаются на стол вокруг текста, как попало.
+## Снимки этого слайда (свою долю от всех снимков круга) — плавно всплывают из темноты вокруг текста, как попало.
 func _scatter_photos(index: int) -> void:
 	var all := Photos.taken
 	if all.is_empty():
 		return
 	var per_slide := ceili(all.size() / float(EPILOGUE.size()))
 	var screen := get_viewport().get_visible_rect().size
-	var delay := 0.0
+	var delay := 0.3
 	for k in range(index * per_slide, mini((index + 1) * per_slide, all.size())):
 		var card := _photo_card(all[k], screen)
-		card.position = _free_spot(screen, card.size) - card.size / 2.0
+		var spot := _free_spot(screen, card.size) - card.size / 2.0
+		card.position = spot + Vector2(0, PHOTO_RISE)
 		card.modulate.a = 0.0
-		card.scale = Vector2.ONE * 1.12
 		board.add_child(card)
-		var drop := create_tween().set_parallel().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		drop.tween_property(card, "modulate:a", 0.9, 0.5).set_delay(delay)
-		drop.tween_property(card, "scale", Vector2.ONE, 0.5).set_delay(delay)
-		delay += 0.35
+		var rise := create_tween().set_parallel().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		rise.tween_property(card, "modulate:a", PHOTO_ALPHA, PHOTO_FADE).set_delay(delay)
+		rise.tween_property(card, "position:y", spot.y, PHOTO_FADE * 1.3).set_delay(delay)
+		delay += 0.7
 
 
-## Снимок в белой рамке (снизу — пошире), повёрнут как попало.
+## Снимок без рамки: края растворяются в темноте (не «наклеен» поверх), чуть повёрнут.
 func _photo_card(image: Image, screen: Vector2) -> Control:
 	var width := screen.x * rng.randf_range(0.17, 0.24)
-	var picture := Vector2(width, width * image.get_height() / image.get_width())
-	var border := width * 0.04
-	var card := ColorRect.new()
-	card.color = Color(0.92, 0.9, 0.86)
-	card.size = picture + Vector2(border * 2.0, border * 4.0)
-	card.pivot_offset = card.size / 2.0
-	card.rotation = rng.randf_range(-0.32, 0.32)
-	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var photo := TextureRect.new()
 	photo.texture = ImageTexture.create_from_image(image)
 	photo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	photo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	photo.position = Vector2(border, border)
-	photo.size = picture
+	photo.stretch_mode = TextureRect.STRETCH_SCALE
+	photo.size = Vector2(width, width * image.get_height() / image.get_width())
+	photo.pivot_offset = photo.size / 2.0
+	photo.rotation = rng.randf_range(-0.22, 0.22)
 	photo.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(photo)
-	return card
+	photo.material = _soft_edges()
+	return photo
+
+
+func _soft_edges() -> ShaderMaterial:
+	if _edge_material == null:
+		var shader := Shader.new()
+		shader.code = """shader_type canvas_item;
+// Края снимка плавно уходят в прозрачность.
+void fragment() {
+	vec4 c = texture(TEXTURE, UV);
+	float edge = smoothstep(0.0, 0.12, UV.x) * smoothstep(1.0, 0.88, UV.x)
+		* smoothstep(0.0, 0.16, UV.y) * smoothstep(1.0, 0.84, UV.y);
+	COLOR = vec4(c.rgb, c.a * edge) * COLOR;
+}"""
+		_edge_material = ShaderMaterial.new()
+		_edge_material.shader = shader
+	return _edge_material
 
 
 ## Случайное место на экране — карточка целиком (с запасом на поворот) не заходит на полосу текста

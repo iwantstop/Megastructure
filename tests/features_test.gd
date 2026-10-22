@@ -115,8 +115,10 @@ func _run() -> void:
 	player.target_pitch = -0.35
 	await _wait(1.0)
 	var can_throw: bool = smoke.state == smoke.State.SMOKING or smoke.state == smoke.State.UNLIT
+	var stood := player.global_position
 	_tap(KEY_Q)
 	await _wait(0.4)
+	_check("бросок окурка не сдвигает героя", player.global_position.distance_to(stood) < 0.05, "сдвиг %.3f м" % player.global_position.distance_to(stood))
 	var butt: RigidBody3D = smoke.butt
 	await _shot("butt")
 	await _wait(5.0)
@@ -129,6 +131,9 @@ func _run() -> void:
 	await _wait(1.0)
 	var hint: Label = Game.hud.action_label
 	_check("у скамейки — «Сесть - E»", hint.text == bench.HINT_SIT and hint.modulate.a > 0.8)
+	var space := player.get_world_3d().direct_space_state
+	var probe := PhysicsRayQueryParameters3D.create(bench.SPOT + Vector3(0, 0.6, 0), bench.SPOT + Vector3(-4.0, 0.6, 0))
+	_check("напротив скамейки перил нет — обрыв", space.intersect_ray(probe).is_empty())
 	await _shot("bench")
 	_tap(KEY_E)
 	await _wait(6.0)
@@ -159,9 +164,9 @@ func _run() -> void:
 	await _wait(0.5)
 	var spoke: bool = ads.speak_nearest()
 	await _wait(0.5)
-	_check("реклама говорит фразой из пролога", spoke and DisplayServer.tts_is_speaking(), "голос: %s" % ("есть" if ads.voice != "" else "нет"))
+	_check("реклама говорит фразой из пролога — от экрана, через громкоговоритель и эхо", spoke and ads.speaker.playing and ads.speaker.bus == &"Ads"
+		and AudioServer.get_bus_effect_count(AudioServer.get_bus_index("Ads")) == 4, "до экрана %.0f м" % ads.speaker.global_position.distance_to(player.global_position))
 	await _wait(3.0)
-	DisplayServer.tts_stop()
 
 	print("FEAT ИТОГ: прошло %d из %d" % [passed, passed + failed])
 	quit()

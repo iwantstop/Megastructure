@@ -354,6 +354,11 @@ func throw_butt() -> void:
 	butt = RigidBody3D.new()
 	butt.mass = 0.01
 	butt.continuous_cd = true
+	# Окурок появляется у самой камеры, внутри капсулы героя: со своим слоем он не толкает героя назад,
+	# но падает на пол, мост и землю (слой мира — 1).
+	butt.collision_layer = 2
+	butt.collision_mask = 1
+	butt.add_collision_exception_with(player)
 	butt.linear_damp = 0.05
 	var shape := CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()

@@ -46,13 +46,14 @@ func _process(delta: float) -> bool:
 			for c in world.get_children():   # рассказ о тепле герой уже слышал на мосту
 				if c.get_script() and str(c.get_script().resource_path).ends_with("journey.gd"):
 					c.warm_told = true
-			# Шесть «снимков» для слайдов: кадр игры, слегка разный по цвету.
-			var frame := root.get_viewport().get_texture().get_image()
-			frame.resize(960, 540)
-			for k in 6:
-				var copy := frame.duplicate()
-				copy.adjust_bcs(1.0 + k * 0.1, 1.0, 1.0)
-				Photos.taken.append(copy)
+			# Шесть снимков для слайдов: последние настоящие снимки из user://photos (если есть), иначе кадр игры.
+			var files := DirAccess.get_files_at("user://photos") if DirAccess.dir_exists_absolute("user://photos") else PackedStringArray()
+			for k in range(files.size() - 1, maxi(files.size() - 7, -1), -1):
+				Photos.taken.append(Image.load_from_file("user://photos/" + files[k]))
+			while Photos.taken.size() < 6:
+				var frame := root.get_viewport().get_texture().get_image()
+				frame.resize(960, 540)
+				Photos.taken.append(frame)
 			player.global_position = Mountain.CENTER + Vector3(0, Mountain.PEAK + 0.5, 0)
 			player.velocity = Vector3.ZERO
 			finale.start()
@@ -63,6 +64,9 @@ func _process(delta: float) -> bool:
 				last_slide = finale.slide
 				shown_at = t
 				print("EPILOGUE slide %d at t=%.1f: \"%s\"" % [finale.slide + 1, t, finale.slide_text.text])
+				root.get_viewport().get_texture().get_image().save_png("res://screenshots/epilogue_%d.png" % (finale.slide + 1))
+			if shown_at > 0.0 and t - shown_at > 3.8 and not has_meta("shot%d" % finale.slide):
+				set_meta("shot%d" % finale.slide, true)   # снимки уже всплыли
 				root.get_viewport().get_texture().get_image().save_png("res://screenshots/epilogue_%d.png" % (finale.slide + 1))
 			if shown_at > 0.0 and t - shown_at > 4.0:
 				print("EPILOGUE slide %d after 4 s without space: still=%s" % [finale.slide + 1, finale.slide == last_slide])

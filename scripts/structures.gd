@@ -57,6 +57,8 @@ func _init(builder: Builder, random: RandomNumberGenerator, materials: Dictionar
 ## Платформа города висит над бездной: края, мост к горе.
 const PLATFORM := Rect2(-268, -368, 536, 518)  # x, z, ширина, глубина (включая подножие башни героя)
 const CAUSEWAY_END := -2350.0                   # мост над бездной тянется до подножия горы
+const BENCH_SPOT := Vector3(-12.4, 0, -1240)     # скамейка у левого края моста (bench_spot.gd)…
+const BENCH_GAP := Vector2(-1242.0, -1237.5)     # …и напротив неё в перилах разрыв — открытый обрыв (z от и до)
 const ABYSS := -900.0                            # докуда уходят основания построек (дальше — туман)
 
 var walk_spots: Array[Vector3] = []   # где можно стоять: для вещей и прочего
@@ -269,8 +271,10 @@ func _causeway() -> void:
 	b.box(Vector3(0, -4, mid), Vector3(width, 8, length), m.ground)
 	b.occluder(Vector3(0, -4, mid), Vector3(width, 8, length))
 	b.box(Vector3(0, 0, mid), Vector3(8, 0.1, length), m.stone, Basis.IDENTITY, false)
-	for s in [-1.0, 1.0]:
-		_railing(Vector3(s * (width / 2.0 - 0.1), 0, z0), Vector3(s * (width / 2.0 - 0.1), 0, CAUSEWAY_END))
+	var edge := width / 2.0 - 0.1
+	_railing(Vector3(edge, 0, z0), Vector3(edge, 0, CAUSEWAY_END))
+	_railing(Vector3(-edge, 0, z0), Vector3(-edge, 0, BENCH_GAP.y))          # слева — разрыв напротив скамейки
+	_railing(Vector3(-edge, 0, BENCH_GAP.x), Vector3(-edge, 0, CAUSEWAY_END))
 	var z := z0 - 30.0
 	while z > CAUSEWAY_END:
 		_lamp_post(Vector3(12.5, 0, z), PI / 2.0)
