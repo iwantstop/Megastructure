@@ -35,6 +35,14 @@ func _find(script_name: String) -> Node:
 	return null
 
 
+func _key(code: Key, down: bool) -> void:
+	var ev := InputEventKey.new()
+	ev.keycode = code
+	ev.physical_keycode = code
+	ev.pressed = down
+	Input.parse_input_event(ev)
+
+
 func _tap(code: Key) -> void:
 	for down in [true, false]:
 		var ev := InputEventKey.new()
@@ -88,6 +96,10 @@ func _run() -> void:
 		if smoke.state == smoke.State.WAIT_STRIKE:
 			_tap(KEY_T)
 		await _wait(0.45)
+	_key(KEY_T, true)   # первая затяжка — подсказка про окурок
+	await _wait(1.5)
+	_key(KEY_T, false)
+	_check("после первой затяжки — «Выбросить окурок - Q»", Game.hud.action_label.text == smoke.THROW_HINT and Game.hud.action_label.modulate.a > 0.5)
 
 	# 4. Мост: у города — слышен город, к середине моста — только ветер.
 	_place(Vector3(0, 0.5, -400), Vector3(0, 0, -3000))

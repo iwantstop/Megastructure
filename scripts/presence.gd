@@ -36,6 +36,7 @@ enum Farewell { NONE, WAITING, TURNING, GONE }
 
 var figure: Node3D
 var anim: AnimationPlayer
+const FINALE_ALPHA := 0.1    # в финале («Это...Всё...Я») ангел прозрачен на 90%
 var mat: StandardMaterial3D
 var player: CharacterBody3D
 var timer := FIRST_APPEAR
@@ -166,7 +167,7 @@ func finale_appear(feet: Vector3, hero: Vector3, boom_at := 3.2) -> void:
 	figure.global_transform = Transform3D(Basis.looking_at(to_hero.normalized(), Vector3.UP), feet)
 	figure.visible = false
 	anim.play("Idle")
-	mat.albedo_color.a = 1.0
+	mat.albedo_color.a = FINALE_ALPHA   # почти призрак: прозрачна на 90%
 	var flashes := [0.35, 1.1, 1.3, 2.25, boom_at, boom_at + 0.75, boom_at + 0.95]
 	var tween := create_tween()
 	var now := 0.0

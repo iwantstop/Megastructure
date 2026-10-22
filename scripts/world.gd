@@ -170,6 +170,7 @@ func _build() -> void:
 	Game.presence = presence
 	add_child(preload("res://scripts/creature.gd").new())   # существо у перил моста
 	add_child(preload("res://scripts/bench_spot.gd").new())  # скамейка и торшер у перил моста
+	add_child(preload("res://scripts/candles.gd").new())   # свечи вдоль дорожки колоннады — путь к мосту
 	var bench_show = preload("res://scripts/bench_show.gd").new()   # со скамейки: бегущая строка и падающий человек
 	bench_show.setup(structures.bench_tower)
 	add_child(bench_show)

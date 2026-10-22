@@ -8,7 +8,7 @@ extends CanvasLayer
 
 const MAX := 24
 const SIZE := Vector2i(960, 540)
-const HINT := "Снимок - C"
+const HINT := "Фотографировать - C"
 
 static var taken: Array[Image] = []
 

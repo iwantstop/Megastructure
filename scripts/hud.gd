@@ -23,6 +23,9 @@ const TASK_POS := Vector2(28, 28)
 const TASK_SLIDE := 12.0      # текст слегка выезжает слева и уезжает обратно, px
 const TEXT_ALPHA := 0.7       # текст полупрозрачный, без обводки и тени
 const SMOKE_HINT := "Закурить - T"
+const ZOOM_HINT := "Зум - ПКМ"
+var start_hints_done := false
+var photo_hint_pending := false
 const SMOKE_HINT_TIME := 5.0  # столько подсказка полностью на экране после того, как герой встал
 const SUB_FADE_IN := 2.2
 const SUB_HOLD := 2.5
@@ -95,6 +98,8 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if player == null:
 		player = Game.player
+		if player:
+			player.zoomed_first.connect(_on_zoomed)
 		return
 	# В самом начале: как только герой встал после падения.
 	if not shown_at_start and not player.locked:
@@ -110,11 +115,15 @@ func _process(_delta: float) -> void:
 		hint_tween.tween_property(smoke_hint, "modulate:a", 1.0, 0.8).set_trans(Tween.TRANS_SINE)
 		hint_tween.tween_interval(SMOKE_HINT_TIME)
 		hint_tween.tween_property(smoke_hint, "modulate:a", 0.0, 0.8).set_trans(Tween.TRANS_SINE)
-		# Следом — «Снимок - C» (снимки бодикамеры, photos.gd), тоже на 5 секунд.
-		hint_tween.tween_callback(func() -> void: smoke_hint.text = Photos.HINT)
+		# Следом — «Зум - ПКМ», тоже на 5 секунд. «Фотографировать - C» — когда впервые приблизит (_on_zoomed).
+		hint_tween.tween_callback(func() -> void: smoke_hint.text = ZOOM_HINT)
 		hint_tween.tween_property(smoke_hint, "modulate:a", 1.0, 0.8).set_trans(Tween.TRANS_SINE)
 		hint_tween.tween_interval(SMOKE_HINT_TIME)
 		hint_tween.tween_property(smoke_hint, "modulate:a", 0.0, 0.8).set_trans(Tween.TRANS_SINE)
+		hint_tween.tween_callback(func() -> void:
+			start_hints_done = true
+			if photo_hint_pending:
+				_on_zoomed())
 		# Когда подсказки отработали — вера в ангела, и задание меняется.
 		var story_tween := create_tween()
 		story_tween.tween_interval(ANGEL_STORY_AT)
@@ -179,6 +188,19 @@ func _task_step(tween: Tween, appear: bool, time: float) -> void:
 	var x := TASK_POS.x if appear else TASK_POS.x - TASK_SLIDE
 	tween.tween_property(task, "modulate:a", 1.0 if appear else 0.0, time)
 	tween.tween_property(task, "position:x", x, time)
+
+
+## Впервые приблизил — подсказка: можно фотографировать (5 с).
+func _on_zoomed() -> void:
+	if not start_hints_done:   # стартовые подсказки ещё на экране — подождать, чтобы не наложились
+		photo_hint_pending = true
+		return
+	photo_hint_pending = false
+	var tween := create_tween()
+	tween.tween_interval(0.8)
+	tween.tween_callback(func() -> void: action_hint(Photos.HINT, true))
+	tween.tween_interval(5.0)
+	tween.tween_callback(func() -> void: action_hint(Photos.HINT, false))
 
 
 ## Подсказка действия внизу («Разжечь костёр - E»): мягко проявляется, пока игрок рядом, и тает, когда отошёл.

@@ -63,6 +63,11 @@ var head_tilt := 0.0               # наклон головы набок (ра�
 var head_tilt_now := 0.0
 var look_smoothing_scale := 1.0   # меньше единицы — голова поворачивается плавнее (главное меню на крыше)
 var look_locked := false           # мышь не поворачивает голову (разбег во вступлении)
+signal zoomed_first   # впервые приблизил ПКМ — подсказка про снимки (hud.gd)
+const AIM_ZOOM := 45.0             # ПКМ — на столько градусов уже обзор (приближение)
+const AIM_SPEED := 7.0             # как быстро приближается и отдаляется
+var aim_zoom := 0.0                # текущее приближение по ПКМ, градусы
+var zoom_used := false
 var fov_zoom := 0.0                # на столько градусов уже обзор — «приближение» (падение во вступлении)
 var scripted_run := Vector2.ZERO   # не ноль — бежит сам (вступление), управление при этом заблокировано
 var scripted_speed := 0.0
@@ -130,7 +135,7 @@ func set_noclip(on: bool) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	# Esc — пауза (pause_menu.gd): там же мышь отпускается.
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not look_locked:
-		var sensitivity := MOUSE_SENSITIVITY * mouse_scale
+		var sensitivity := MOUSE_SENSITIVITY * mouse_scale * (1.0 - aim_zoom / FOV * 0.8)   # приблизил — мышь точнее
 		target_yaw -= event.relative.x * sensitivity
 		var dy: float = -event.relative.y if invert_y else event.relative.y
 		target_pitch = clampf(target_pitch - dy * sensitivity, deg_to_rad(-89), deg_to_rad(89))
@@ -284,7 +289,13 @@ func _process(delta: float) -> void:
 			panic_look.y + _tumble(300.0) * 0.16 * panic + _chaos(320.0) * 0.14 * panic + _buffet(310.0) * 0.006 * panic,
 			panic_look.x + _tumble(400.0) * 0.14 * panic + _chaos(420.0) * 0.18 * panic + _buffet(410.0) * 0.006 * panic,
 			_tumble(500.0) * 0.55 * panic + _chaos(520.0) * 0.4 * panic + _buffet(510.0) * 0.004 * panic)
-	camera.fov = FOV + PANIC_FOV * panic - fov_zoom
+	# ПКМ — плавное приближение, отпустил — плавное отдаление.
+	var aiming := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not locked
+	aim_zoom = lerpf(aim_zoom, AIM_ZOOM if aiming else 0.0, 1.0 - exp(-AIM_SPEED * delta))
+	if aiming and not zoom_used:
+		zoom_used = true
+		zoomed_first.emit()
+	camera.fov = FOV + PANIC_FOV * panic - fov_zoom - aim_zoom
 
 
 ## Медленное заваливание тела в падении: плавно, около одного «качка» за 2–3 секунды.
