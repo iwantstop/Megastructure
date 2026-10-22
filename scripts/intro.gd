@@ -58,6 +58,7 @@ var state := State.FALLING
 var from_roof := false               # новая игра: начать на крыше (world.gd), иначе — сразу падение
 var step_tween: Tween                # прыжок с края: тьма — и падение
 var running := false
+var rain: AudioStreamPlayer          # в меню: тихий шелест дождя и капли по крыше
 var breath: AudioStreamPlayer        # на крыше, у края, — частое сбивчивое дыхание: страшно прыгать
 var jumped := false
 var t := 0.0
@@ -198,14 +199,71 @@ func _stand_on_roof() -> void:
 	player.target_pitch = -0.05
 	player.head.rotation.x = player.target_pitch
 	_build_hatch()
+	_build_wet_roof()
 	_build_enjoy_sign()
 	if Game.clouds:
 		Game.clouds.position.y = CLOUDS_ABOVE
 	breath = AudioStreamPlayer.new()
 	breath.stream = _scared_breath()
-	breath.volume_db = -11.0
+	breath.volume_db = -16.0
+	rain = AudioStreamPlayer.new()
+	rain.stream = _rain_on_roof()
+	rain.volume_db = -14.0
+	rain.bus = &"Ambience"
+	add_child(rain)
+	rain.play()
 	add_child(breath)
 	breath.play()
+
+
+## Мокрая крыша: тёмная глянцевая плёнка воды по всей крыше, с лужами (там глаже — отражения, SSR).
+func _build_wet_roof() -> void:
+	var puddles := NoiseTexture2D.new()
+	var noise := FastNoiseLite.new()
+	noise.frequency = 0.012
+	noise.fractal_octaves = 3
+	puddles.noise = noise
+	puddles.width = 512
+	puddles.height = 512
+	puddles.seamless = true
+	var water := StandardMaterial3D.new()
+	water.albedo_color = Color(0.1, 0.11, 0.13, 0.3)   # почти прозрачная: бетон виден, блестит вода
+	water.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	water.metallic = 0.4
+	water.roughness = 0.12
+	water.roughness_texture = puddles   # пятна: где-то лужа как зеркало, где-то просто мокрый бетон
+	water.uv1_scale = Vector3(3, 3, 3)
+	var film := MeshInstance3D.new()
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(45.0, 45.0)
+	film.mesh = plane
+	film.material_override = water
+	film.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	player.get_parent().add_child(film)
+	film.global_position = Vector3(Structures.TALLEST_TOWER.x, Structures.TALLEST_HEIGHT + 0.02, Structures.TALLEST_TOWER.z)
+
+
+## Дождь по крыше: ровный тихий шелест и редкие крупные капли (по металлу люка, по лужам); петля 6 с.
+func _rain_on_roof() -> AudioStreamWAV:
+	var samples := PackedFloat32Array()
+	samples.resize(int(Synth.MIX_RATE * 6.0))
+	var lp := 0.0
+	var hp := 0.0
+	var drop := 0.0
+	var drop_f := 0.0
+	var phase := 0.0
+	for i in samples.size():
+		var n := randf() * 2.0 - 1.0
+		lp += (n - lp) * 0.5
+		hp += (lp - hp) * 0.05
+		var hiss := (lp - hp) * 0.35   # шелест: без гула и без резкого шипения
+		if randf() < 0.0006:   # капля
+			drop = randf_range(0.3, 0.8)
+			drop_f = randf_range(900.0, 2600.0)
+		phase += TAU * drop_f / Synth.MIX_RATE
+		drop *= 0.9965
+		samples[i] = hiss + sin(phase) * drop * 0.5
+	return Synth.wav_from(samples, true)
 
 
 ## Люк в крыше позади: бортик, откинутая крышка, изнутри — тёплый свет лестницы.
@@ -289,8 +347,9 @@ func start_game() -> void:
 	player.target_pitch = -0.05
 	player.scripted_run = Vector2(0, -1)
 	player.scripted_speed = RUN_SPEED
-	if breath:   # рванул — дыхание тонет в шагах и ветре
+	if breath:   # рванул — дыхание и дождь тонут в шагах и ветре
 		create_tween().tween_property(breath, "volume_db", -40.0, 1.6)
+		create_tween().tween_property(rain, "volume_db", -40.0, 2.5)
 
 
 func _run_on_roof(delta: float) -> void:
@@ -445,6 +504,7 @@ func _restore_world() -> void:
 		Game.clouds.position.y = preload("res://scripts/world.gd").CLOUDS_Y
 	if breath:
 		breath.stop()
+		rain.stop()
 	player.gravity = ProjectSettings.get_setting("physics/3d/default_gravity")
 	player.fall_cap = player.MAX_FALL_SPEED
 	player.head_tilt = 0.0
