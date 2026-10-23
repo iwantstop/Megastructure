@@ -10,7 +10,7 @@ tags: [megastructure, главная]
 > Меланхоличная бродилка от первого лица. Бессмертный человек в городе-тюрьме среди мегаструктур
 > ищет своего молчащего ангела — и уходит к горе над облаками.
 
-**🎮 Скачать игру:** [релиз v0.7 на GitHub](https://github.com/iwantstop/Megastructure/releases/tag/v0.7) · **Код:** [github.com/iwantstop/Megastructure](https://github.com/iwantstop/Megastructure) (приватный)
+**🎮 Скачать игру:** [релиз v0.7.1 на GitHub](https://github.com/iwantstop/Megastructure/releases/tag/v0.7.1) · **Код:** [github.com/iwantstop/Megastructure](https://github.com/iwantstop/Megastructure) (приватный)
 
 ![[Карта мира — после правок.png]]
 
