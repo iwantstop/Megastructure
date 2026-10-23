@@ -316,7 +316,7 @@ func _build_beacon() -> void:
 	beacon.shadow_enabled = true
 	player.get_parent().add_child(beacon)
 	beacon.global_position = top + Vector3(0, -1.0, 0)
-	var pulse := create_tween().set_loops()
+	var pulse := beacon.create_tween().set_loops()   # привязан к лампе: удалят лампу — анимация умрёт вместе с ней (иначе бесконечный цикл и зависание в exe)
 	pulse.tween_property(beacon, "light_energy", 3.5, 1.6).set_trans(Tween.TRANS_SINE)
 	pulse.tween_property(beacon, "light_energy", 7.0, 1.6).set_trans(Tween.TRANS_SINE)
 
