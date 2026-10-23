@@ -60,6 +60,7 @@ var state := State.FALLING
 var from_roof := false               # новая игра: начать на крыше (world.gd), иначе — сразу падение
 var step_tween: Tween                # прыжок с края: тьма — и падение
 var running := false
+var logged_state := -1
 var beacon: OmniLight3D              # красный луч со шпиля на крышу — только ночью, во вступлении
 var stars: MultiMeshInstance3D       # звёзды ночного неба во вступлении
 var fall_fx := 0.0                   # 0..1 — помехи, тёмные края и приближение в падении с крыши
@@ -120,6 +121,9 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	t += delta
+	if state != logged_state:   # в лог — смена этапов вступления (по логу exe видно, где застряло)
+		logged_state = state
+		print("[вступление] ", State.keys()[state])
 	match state:
 		State.ROOF:
 			if running:
