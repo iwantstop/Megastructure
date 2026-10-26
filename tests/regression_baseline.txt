@@ -1,2 +1,2 @@
 ﻿FINGERPRINT meshes=1191 verts=3191596 shapes=14016 occluders=793 nodes=17913 terrain=1
-FINGERPRINT mountain heights=137801.80 colors=14846.173 holes=760 collision=66082.58
+FINGERPRINT mountain heights=57903.91 colors=14774.314 holes=355 collision=284410.36

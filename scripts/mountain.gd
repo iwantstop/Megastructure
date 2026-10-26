@@ -27,7 +27,7 @@ const CAVE_HALF_W := 9.0      # половина ширины выемки, м
 
 # Параметры извилистости тропы
 const WINDING_FREQ := 0.7     # частота волн тропы (чем больше, тем чаще петляет)
-const WINDING_AMP := 35.0     # амплитуда волн (насколько сильно отклоняется от идеальной спирали)
+const WINDING_AMP := 20.0     # амплитуда волн (насколько сильно отклоняется от идеальной спирали)
 const PATH_W_VAR := 0.25      # вариация ширины тропы (±25% от базовой)
 
 const THETA := LAPS * TAU
@@ -40,17 +40,12 @@ var terrain: Terrain3D
 var cave_inverse: Transform3D  # пещера — посчитана один раз, а не на каждый пиксель карты
 var cave_floor := 0.0
 var noise := FastNoiseLite.new()
-var winding_noise := FastNoiseLite.new()  # шум для извилистости тропы
 
 
 func _ready() -> void:
 	noise.seed = 4242
 	noise.frequency = 0.012
 	noise.fractal_octaves = 4
-
-	winding_noise.seed = 8484
-	winding_noise.frequency = WINDING_FREQ
-	winding_noise.fractal_octaves = 3
 
 	var cave := cave_frame()
 	cave_inverse = cave.affine_inverse()
@@ -154,12 +149,37 @@ static func _arc(theta: float) -> float:
 ## Точка на тропе: fraction 0 — начало у моста, 1 — вершина. Возвращает положение и направление вперёд.
 static func path_point(fraction: float) -> Transform3D:
 	var theta := clampf(fraction, 0.0, 1.0) * THETA
-	var r := R_BASE - C * theta
+	var r := path_radius(theta)
 	var phi := START_ANGLE + theta
 	var pos := CENTER + Vector3(cos(phi) * r, path_height(theta), sin(phi) * r)
-	var ahead := CENTER + Vector3(cos(phi + 0.05) * (r - C * 0.05), 0, sin(phi + 0.05) * (r - C * 0.05))
+	var r2 := path_radius(theta + 0.05)
+	var ahead := CENTER + Vector3(cos(phi + 0.05) * r2, 0, sin(phi + 0.05) * r2)
 	ahead.y = pos.y
 	return Transform3D(Basis.looking_at(ahead - pos, Vector3.UP), pos)
+
+
+## Радиус тропы на угле спирали theta: ровная спираль плюс плавные петли внутрь-наружу (WINDING_AMP).
+## У начала (стык с мостом) и у вершины петель нет — тропа выходит точно туда же.
+static func path_radius(theta: float) -> float:
+	var calm := smoothstep(0.0, 1.2, theta) * (1.0 - smoothstep(THETA - 1.5, THETA, theta))
+	# у пещеры тропа ровная — её вход рассчитан на прямой участок
+	calm *= smoothstep(0.35, 0.8, absf(theta - CAVE_AT * THETA))
+	return R_BASE - C * theta + _winding().get_noise_1d(theta * 3.0) * WINDING_AMP * calm
+
+
+## Ширина тропы на угле theta: местами уже, местами шире (±PATH_W_VAR).
+static func path_width(theta: float) -> float:
+	return PATH_W * (1.0 + _winding().get_noise_1d(theta * 5.0 + 100.0) * PATH_W_VAR)
+
+
+static var _wind_noise: FastNoiseLite
+static func _winding() -> FastNoiseLite:
+	if _wind_noise == null:
+		_wind_noise = FastNoiseLite.new()
+		_wind_noise.seed = 8484
+		_wind_noise.frequency = WINDING_FREQ
+		_wind_noise.fractal_octaves = 3
+	return _wind_noise
 
 
 ## Высота земли в точке и признак «это тропа» (x — высота, y — 1 на тропе, 0 — скала).
@@ -170,20 +190,18 @@ func _sample(x: float, z: float) -> Vector2:
 	var theta0 := fposmod(atan2(dz, dx) - START_ANGLE, TAU)
 	var rock := noise.get_noise_2d(x, z)
 
-	# Ближайший виток снаружи (k_out) и внутри (k_out + 1) от этой точки.
-	# Добавляем извилистость: тропа петляет внутрь-наружу по ходу подъёма.
-	var winding := winding_noise.get_noise_2d(theta0 * 3.0, 0.0) * WINDING_AMP
-	var r_adjusted := r - winding  # компенсируем извилистость для правильного определения витка
-
-	var k_out := floori((R_BASE - r_adjusted - C * theta0) / (C * TAU))
+	# Ближайший виток снаружи (k_out) и внутри (k_out + 1) от этой точки: витки идут внутрь с шагом ~190 м,
+	# петли (±WINDING_AMP) меньше шага — порядок витков не путается.
+	var k_out := -1
+	for k in range(0, 4):
+		if path_radius(theta0 + k * TAU) >= r:
+			k_out = k
 	var theta_out := theta0 + k_out * TAU
-	var r_out := R_BASE - C * theta_out + winding_noise.get_noise_2d(theta_out * 3.0, 0.0) * WINDING_AMP
+	var r_out := path_radius(theta_out)
 	var theta_in := theta_out + TAU
-	var r_in := R_BASE - C * theta_in + winding_noise.get_noise_2d(theta_in * 3.0, 0.0) * WINDING_AMP
-
-	# Переменная ширина тропы — местами уже, местами шире
-	var path_w_out := PATH_W * (1.0 + winding_noise.get_noise_2d(theta_out * 5.0, 100.0) * PATH_W_VAR)
-	var path_w_in := PATH_W * (1.0 + winding_noise.get_noise_2d(theta_in * 5.0, 100.0) * PATH_W_VAR)
+	var r_in := path_radius(theta_in) if theta_in <= THETA else R_BASE - C * theta_in
+	var path_w_out := path_width(theta_out)
+	var path_w_in := path_width(theta_in)
 
 	if k_out < 0:
 		# Снаружи первого витка: край тропы и обрыв в бездну.
