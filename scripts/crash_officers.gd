@@ -1,12 +1,14 @@
 extends Node3D
 
-## Офицеры у разбитой машины (вступление): герой очнулся — из глубины площади к горящим обломкам бегут
-## семеро в красной форме. Добежав, каждый замирает по-своему: кто-то присел у обломков, кто-то говорит,
-## кто-то стоит навытяжку, руки за спиной, кто-то держит пистолет наготове. Героя они не замечают.
+## Офицеры у разбитой машины (вступление): герой очнулся — из глубины площади к горящим обломкам приближаются
+## семеро в красной форме. Они не бегут: каждую секунду каждый рывком переносится ближе, застывший посреди бега
+## (новый застывший кадр на каждом шаге). Дойдя, замирает по-своему — присел, говорит, навытяжку, руки за
+## спиной, с пистолетом. Всё неподвижно, как манекены; героя они не замечают.
 
 const MODEL := preload("res://assets/characters/officer/officer.glb")
 const CAR := Vector3(7.5, 0.0, 77.5)    # где лежит машина (crash_car.gd)
-const RUN_SPEED := Vector2(4.6, 6.4)    # бегут по-разному
+const HOP_EVERY := 1.0                  # раз в столько секунд — рывок ближе
+const HOPS := Vector2i(5, 8)            # за столько рывков доходят (у каждого своё)
 ## откуда бежит (x, z), где встаёт у машины (смещение от неё), во что замирает, задержка старта
 const SQUAD := [
 	[Vector2(-3, 32), Vector2(-5.5, -3.0), "Crouch_Idle", 0.0],
@@ -33,9 +35,9 @@ func start() -> void:
 		_face(body, to)
 		body.visible = false
 		var anim: AnimationPlayer = body.find_child("AnimationPlayer", true, false)
-		var fast := rng.randf() < 0.5
-		runners.append({"body": body, "anim": anim, "to": to, "pose": entry[2], "wait": entry[3],
-			"speed": rng.randf_range(RUN_SPEED.x, RUN_SPEED.y), "run": "Sprint" if fast else "Jog_Fwd", "state": 0})
+		runners.append({"body": body, "anim": anim, "from": from, "to": to, "pose": entry[2], "wait": entry[3],
+			"hops": rng.randi_range(HOPS.x, HOPS.y), "hop": 0, "run": "Sprint" if rng.randf() < 0.5 else "Jog_Fwd",
+			"state": 0, "rng": rng.randi()})
 
 
 func _face(body: Node3D, at: Vector3) -> void:
@@ -45,29 +47,33 @@ func _face(body: Node3D, at: Vector3) -> void:
 
 func _process(delta: float) -> void:
 	for r in runners:
-		match r.state:
-			0:   # ждёт своей очереди
-				r.wait -= delta
-				if r.wait <= 0.0:
-					r.state = 1
-					r.body.visible = true
-					_loop(r.anim, r.run)
-			1:   # бежит
-				var body: Node3D = r.body
-				var to: Vector3 = r.to
-				var d := to - body.global_position
-				var step: float = r.speed * delta
-				if d.length() <= step:
-					body.global_position = to
-					_face(body, CAR)   # встал — лицом к огню
-					r.state = 2
-					_loop(r.anim, r.pose)
-				else:
-					body.global_position += d.normalized() * step
+		if r.state == 2:
+			continue
+		r.wait -= delta
+		if r.wait > 0.0:
+			continue
+		r.wait = HOP_EVERY
+		var body: Node3D = r.body
+		r.hop += 1
+		var k: float = float(r.hop) / r.hops
+		if r.state == 0:   # появился — сразу застывший посреди бега, у дальнего края площади
+			r.state = 1
+			body.visible = true
+			k = 0.0
+		body.global_position = (r.from as Vector3).lerp(r.to, k)
+		if k >= 1.0:
+			_face(body, CAR)   # дошёл — лицом к огню, замер в своей позе
+			r.state = 2
+			_freeze(r.anim, r.pose, 0.35)
+		else:
+			_face(body, r.to)
+			_freeze(r.anim, r.run, randf())   # новый застывший кадр бега на каждом рывке
 
 
-func _loop(anim: AnimationPlayer, name: String) -> void:
+## Поза — один застывший кадр анимации (at — доля её длины).
+func _freeze(anim: AnimationPlayer, name: String, at: float) -> void:
 	if not anim.has_animation(name):
 		name = "Idle"
-	anim.get_animation(name).loop_mode = Animation.LOOP_LINEAR
-	anim.play(name, 0.3)
+	anim.play(name)
+	anim.seek(anim.get_animation(name).length * at, true)
+	anim.pause()
