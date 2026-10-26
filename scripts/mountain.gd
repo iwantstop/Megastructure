@@ -2,16 +2,17 @@ class_name Mountain
 extends Node3D
 
 ## Гора за мостом — цель пути. Ландшафт Terrain3D, сгенерированный из кода.
-## Тропа — спираль: начинается у конца моста над бездной (высота 0) и, обойдя гору
-## два с половиной раза, выводит на вершину над облаками. Между витками тропы — скальные
-## стены, снаружи — обрыв в бездну. Длина подъёма ~4 км, уклон тропы постоянный (~15%).
+## Тропа — извилистая спираль: начинается у конца моста над бездной (высота 0) и, обойдя гору
+## два с половиной раза, выводит на вершину над облаками. Тропа петляет внутрь-наружу, местами
+## уже, местами шире — как натуральная горная дорога. Между витками — скальные стены, снаружи —
+## обрыв в бездну. Длина подъёма ~4 км, средний уклон ~15%, но местами круче.
 
 const CENTER := Vector3(0, 0, -2870)
 const R_BASE := 500.0        # радиус первого витка тропы
-const R_TOP := 40.0          # радиус вершинной площадки
+const R_TOP := 18.0          # радиус вершинной площадки (было 40 — слишком широко)
 const LAPS := 2.5
 const PEAK := 650.0          # облака — на 420 м
-const PATH_W := 12.0
+const PATH_W := 12.0         # базовая ширина тропы (будет варьироваться 9-15м)
 const START_ANGLE := PI / 2.0  # тропа начинается со стороны моста (+Z)
 const SPACING := 2.0         # метров между точками карты высот
 const MARGIN := 220.0        # поле вокруг горы, где склон уходит в бездну
@@ -24,6 +25,11 @@ const CAVE_AT := 0.3          # пещера — на этой доле подъ
 const CAVE_DEPTH := 36.0      # глубина выемки в стене, м
 const CAVE_HALF_W := 9.0      # половина ширины выемки, м
 
+# Параметры извилистости тропы
+const WINDING_FREQ := 0.7     # частота волн тропы (чем больше, тем чаще петляет)
+const WINDING_AMP := 35.0     # амплитуда волн (насколько сильно отклоняется от идеальной спирали)
+const PATH_W_VAR := 0.25      # вариация ширины тропы (±25% от базовой)
+
 const THETA := LAPS * TAU
 const C := (R_BASE - R_TOP) / THETA  # насколько тропа приближается к центру на радиан
 
@@ -34,15 +40,21 @@ var terrain: Terrain3D
 var cave_inverse: Transform3D  # пещера — посчитана один раз, а не на каждый пиксель карты
 var cave_floor := 0.0
 var noise := FastNoiseLite.new()
+var winding_noise := FastNoiseLite.new()  # шум для извилистости тропы
 
 
 func _ready() -> void:
 	noise.seed = 4242
+	noise.frequency = 0.012
+	noise.fractal_octaves = 4
+
+	winding_noise.seed = 8484
+	winding_noise.frequency = WINDING_FREQ
+	winding_noise.fractal_octaves = 3
+
 	var cave := cave_frame()
 	cave_inverse = cave.affine_inverse()
 	cave_floor = cave.origin.y
-	noise.frequency = 0.012
-	noise.fractal_octaves = 4
 
 	# Terrain3D при добавлении в сцену ставит свои материал и набор текстур по умолчанию,
 	# поэтому всё настраиваем уже после add_child.
@@ -159,18 +171,26 @@ func _sample(x: float, z: float) -> Vector2:
 	var rock := noise.get_noise_2d(x, z)
 
 	# Ближайший виток снаружи (k_out) и внутри (k_out + 1) от этой точки.
-	var k_out := floori((R_BASE - r - C * theta0) / (C * TAU))
+	# Добавляем извилистость: тропа петляет внутрь-наружу по ходу подъёма.
+	var winding := winding_noise.get_noise_2d(theta0 * 3.0, 0.0) * WINDING_AMP
+	var r_adjusted := r - winding  # компенсируем извилистость для правильного определения витка
+
+	var k_out := floori((R_BASE - r_adjusted - C * theta0) / (C * TAU))
 	var theta_out := theta0 + k_out * TAU
-	var r_out := R_BASE - C * theta_out
+	var r_out := R_BASE - C * theta_out + winding_noise.get_noise_2d(theta_out * 3.0, 0.0) * WINDING_AMP
 	var theta_in := theta_out + TAU
-	var r_in := R_BASE - C * theta_in
+	var r_in := R_BASE - C * theta_in + winding_noise.get_noise_2d(theta_in * 3.0, 0.0) * WINDING_AMP
+
+	# Переменная ширина тропы — местами уже, местами шире
+	var path_w_out := PATH_W * (1.0 + winding_noise.get_noise_2d(theta_out * 5.0, 100.0) * PATH_W_VAR)
+	var path_w_in := PATH_W * (1.0 + winding_noise.get_noise_2d(theta_in * 5.0, 100.0) * PATH_W_VAR)
 
 	if k_out < 0:
 		# Снаружи первого витка: край тропы и обрыв в бездну.
 		var h0 := path_height(theta_in)
-		if r - r_in <= PATH_W / 2.0:
+		if r - r_in <= path_w_in / 2.0:
 			return Vector2(h0, 1.0)
-		var drop := r - r_in - PATH_W / 2.0
+		var drop := r - r_in - path_w_in / 2.0
 		var cliff := maxf(h0 - drop * 1.8 + rock * 12.0, -500.0)
 		var outer := lerpf(cliff, _terrace(cliff, rock), smoothstep(3.0, 15.0, drop))
 		# Перед самым началом тропы (если смотреть с моста — справа) снаружи первого витка был отвесный срез
@@ -179,7 +199,7 @@ func _sample(x: float, z: float) -> Vector2:
 		var seam := smoothstep(TAU - 1.7, TAU - 0.02, theta0)
 		if seam > 0.0:
 			var r_start := R_BASE + C * (TAU - theta0)   # где шла бы тропа у земли, продолжись она назад
-			var tt := clampf((r - r_in - PATH_W / 2.0) / maxf(r_start - r_in - PATH_W / 2.0, 1.0), 0.0, 1.0)
+			var tt := clampf((r - r_in - path_w_in / 2.0) / maxf(r_start - r_in - path_w_in / 2.0, 1.0), 0.0, 1.0)
 			var slope := lerpf(h0, 0.0, smoothstep(0.0, 1.0, tt)) + rock * 25.0 * sin(tt * PI)
 			var ramp := lerpf(slope, _terrace(slope, rock), smoothstep(0.05, 0.25, tt) * (1.0 - smoothstep(0.85, 0.97, tt)))
 			if r > r_start:
@@ -194,18 +214,18 @@ func _sample(x: float, z: float) -> Vector2:
 	if depth > -1.0 and depth < CAVE_DEPTH and absf(local.x) < CAVE_HALF_W:
 		return Vector2(lerpf(h_out, cave_floor, smoothstep(0.0, 4.0, depth)), 1.0)
 	if theta_in >= THETA:
-		# Внутри последнего витка — вершинная площадка.
+		# Внутри последнего витка — вершинная площадка (компактная).
 		r_in = maxf(r_in, R_TOP)
-		if r - r_in <= PATH_W / 2.0 or r < R_TOP:
+		if r - r_in <= path_w_in / 2.0 or r < R_TOP:
 			return Vector2(PEAK, 1.0)
 	var h_in := PEAK if theta_in >= THETA else path_height(theta_in)
 
-	if r_out - r <= PATH_W / 2.0:
+	if r_out - r <= path_w_out / 2.0:
 		return Vector2(h_out, 1.0)
-	if r - r_in <= PATH_W / 2.0:
+	if r - r_in <= path_w_in / 2.0:
 		return Vector2(h_in, 1.0)
 	# Скальная стена между витками: от нижней тропы к верхней, с выступами и уступами-террасами.
-	var t := clampf((r_out - PATH_W / 2.0 - r) / maxf(r_out - r_in - PATH_W, 1.0), 0.0, 1.0)
+	var t := clampf((r_out - path_w_out / 2.0 - r) / maxf(r_out - r_in - PATH_W, 1.0), 0.0, 1.0)
 	var wall := lerpf(h_out, h_in, smoothstep(0.0, 1.0, t)) + rock * 25.0 * sin(t * PI)
 	# У самих троп уступов нет — иначе у подножия стены получится канава или ступенька.
 	var away_from_paths := smoothstep(0.05, 0.25, t) * (1.0 - smoothstep(0.85, 0.97, t))

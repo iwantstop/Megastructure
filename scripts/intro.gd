@@ -71,6 +71,7 @@ var breath: AudioStreamPlayer        # на крыше, у края, — час�
 var jumped := false
 var t := 0.0
 var rat_mat := StandardMaterial3D.new()
+var officers: Node3D                 # офицеры, бегущие к обломкам (crash_officers.gd)
 var car: Node3D                      # летающая машина, в которую он падает (crash_car.gd)
 var looked_down := false
 
@@ -551,6 +552,10 @@ func _end_story() -> void:
 func _wake_up() -> void:
 	state = State.LYING
 	t = 0.0
+	if officers == null:   # к горящей машине сбегаются офицеры
+		officers = preload("res://scripts/crash_officers.gd").new()
+		player.get_parent().add_child(officers)
+		officers.start()
 	_look_at_mountain()
 	for i in 12:
 		_rat(i)
