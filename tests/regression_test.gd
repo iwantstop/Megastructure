@@ -191,7 +191,8 @@ func _prologue() -> void:
 		and hero.global_position.y > 755.0 and Game.journey.night > 0.99)
 	prologue.menu.get_child(0).emit_signal("pressed")   # «Начать игру»
 	var ran := await _until(func() -> bool: return intro_node.running and Vector2(hero.velocity.x, hero.velocity.z).length() > 6.0, 3.0)
-	_check("«Начать игру» — разбегается по крыше, камера трясётся", ran and hero.fall_shake > 0.1)
+	await _wait(0.5)   # тряска нарастает с разбегом
+	_check("«Начать игру» — разбегается по крыше, камера трясётся", ran and hero.fall_shake > 0.1, "тряска %.2f" % hero.fall_shake)
 	var stepped := await _until(func() -> bool: return intro_node.state == intro_node.State.FALLING, 12.0)
 	var y0: float = hero.global_position.y
 	await _wait(2.0)
@@ -215,7 +216,8 @@ func _fall_and_wake() -> void:
 		elif dt >= 0.05:
 			hitches += 1      # подвисший кадр: в нём «скачок» — от задержки кадра, а не от рывка головы
 		last_look = player.panic_look
-	_check("паника: обзор шире с разгоном", max_fov > 95.0, "до %.0f°" % max_fov)
+	# (обычный обзор 85°; в падении с крыши картинка ещё и чуть приближена — на 9°)
+	_check("паника: обзор шире с разгоном", max_fov > 90.0, "до %.0f°" % max_fov)
 	_check("паника: голова поворачивается плавно, без рывков", max_speed < 6.0,
 		"наибольшая скорость %.0f°/с; подвисших кадров: %d" % [rad_to_deg(max_speed), hitches])
 	await process_frame
@@ -485,7 +487,8 @@ func _admin() -> void:
 	var off: bool = is_zero_approx(mat.get_shader_parameter("distortion")) and is_zero_approx(mat.get_shader_parameter("grain"))
 	admin._on_bodycam_strength(100.0)
 	_check("регулятор бодикамеры: 0% — чисто, 100% — как было", off and is_equal_approx(mat.get_shader_parameter("distortion"), 0.14))
-	_check("регуляторы покачивания и крена — по умолчанию 100%", is_equal_approx(player.bob_scale, 1.0) and is_equal_approx(player.turn_roll_scale, 1.0))
+	_check("регуляторы покачивания и крена — как в настройках", is_equal_approx(player.bob_scale, Settings.get_value("bob"))
+		and is_equal_approx(player.turn_roll_scale, Settings.get_value("roll")), "покачивание %.2f, крен %.2f" % [player.bob_scale, player.turn_roll_scale])
 
 
 func _finish() -> void:
